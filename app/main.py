@@ -9,6 +9,7 @@ from app.core.database import create_db_and_tables, close_db
 from app.core.logging import setup_logging
 from app.middleware.logging_middleware import LoggingMiddleware, StructlogMiddleware
 from app.controllers import auth_controller, product_controller, interview_controller
+from app.services.pipecat_service import pipecat_service
 
 import structlog
 
@@ -29,15 +30,20 @@ async def lifespan(app: FastAPI):
     
     logger.info("Application shutdown")
     try:
+        # Clean up pipecat connections
+        await pipecat_service.cleanup_all()
+        logger.info("Pipecat connections cleaned up")
+        
+        # Close database connections
         await close_db()
         logger.info("Database connections closed")
     except Exception as e:
-        logger.error("Error closing database connections", error=str(e))
+        logger.error("Error during shutdown", error=str(e))
 
 
 app = FastAPI(
     title="Mock Interview API",
-    description="A Roundz Mock Interview API",
+    description="A Roundz Mock Interview API with Pipecat Integration",
     version="1.0.0",
     lifespan=lifespan,
     docs_url="/docs" if settings.environment == "local" else None,
@@ -46,18 +52,18 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.cors_origins,
+    allow_origins=["*"],  # Or specify: ["http://localhost:3000", "https://yourdomain.com"]
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["*"],  # Allow all HTTP methods: GET, POST, etc.
+    allow_headers=["*"],  # Allow all headers
 )
 
-app.add_middleware(StructlogMiddleware)
-app.add_middleware(LoggingMiddleware)
+# app.add_middleware(StructlogMiddleware)
+# app.add_middleware(LoggingMiddleware)
 
 app.include_router(auth_controller.router, prefix=settings.api_prefix)
 app.include_router(product_controller.router, prefix=settings.api_prefix)
-app.include_router(interview_controller.router)
+app.include_router(interview_controller.router, prefix="")
 
 
 @app.get("/")
@@ -66,6 +72,7 @@ async def root():
         "message": "Mock Interview API is running",
         "version": "1.0.0",
         "environment": settings.environment,
+                    "features": ["JWT Authentication", "Pipecat Integration", "Real-time Interviews", "Phase Management"],
         "docs_url": "/docs" if settings.environment == "local" else "Documentation disabled in production"
     }
 
@@ -74,7 +81,9 @@ async def root():
 async def health_check():
     return {
         "status": "healthy",
-        "environment": settings.environment
+        "environment": settings.environment,
+        "pipecat_connections": len(pipecat_service.connections),
+        "active_bots": len(pipecat_service.bot_instances)
     }
 
 

@@ -1,17 +1,45 @@
-fastapi==0.104.1
-uvicorn[standard]==0.24.0
-sqlmodel==0.0.14
-asyncpg==0.29.0
-psycopg2-binary==2.9.9
-python-jose[cryptography]==3.3.0
-python-multipart==0.0.6
-passlib[bcrypt]==1.7.4
-pydantic-settings==2.1.0
-structlog==23.2.0
-python-json-logger==2.0.7
-alembic==1.13.1
-pytest==7.4.3
-pytest-asyncio==0.21.1
-httpx==0.25.2
-pydantic[email]
-greenlet
+# Core FastAPI dependencies
+fastapi>=0.116.1
+uvicorn[standard]>=0.35.0
+sqlmodel>=0.0.24
+asyncpg>=0.30.0
+python-jose[cryptography]>=3.5.0
+python-multipart>=0.0.20
+passlib[bcrypt]>=1.7.4
+pydantic-settings>=2.10.1
+structlog>=25.4.0
+pydantic[email]>=2.11.7
+greenlet>=3.2.4
+
+# Development and testing dependencies
+# alembic>=1.13.1
+# pytest>=7.4.3
+# pytest-asyncio>=0.21.1
+# httpx>=0.25.2
+
+# Pipecat dependencies for interview functionality
+pipecat-ai[google,silero,webrtc,deepgram]==0.0.77
+python-dotenv>=1.1.1
+opencv-python>=4.11.0
+loguru>=0.7.3
+
+# WebRTC dependencies (required for pipecat WebRTC functionality)
+aiortc>=1.11.0
+aioice>=0.10.1
+
+# Silero VAD dependencies (required for voice activity detection)
+onnxruntime>=1.20.1
+torch>=2.8.0
+torchaudio>=2.8.0
+
+# Google AI dependencies (required for LLM functionality)
+google-generativeai>=0.8.5
+google-ai-generativelanguage>=0.6.15
+
+# Deepgram dependencies (required for STT/TTS functionality)
+deepgram-sdk>=4.7.0
+
+# Optional pipecat dependencies (install these if you want full functionality)
+# deepgram-sdk
+# google-cloud-aiplatform
+# openai
