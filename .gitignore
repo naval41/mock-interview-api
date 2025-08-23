@@ -170,5 +170,26 @@ poetry.toml
 # LSP config files
 pyrightconfig.json
 
-*.env
+# Environment files (ignore all .env files except templates)
+.env
+.env.*
+!.env.template
+config/*.env
+config/local.env
+config/production.env
+config/staging.env
+
+# OS files
 .DS_Store
+Thumbs.db
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Logs
+*.log
+logs/
