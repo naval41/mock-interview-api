@@ -125,14 +125,13 @@ class InterviewBot:
                 raise ValueError("google_api_key not found in settings. Please check your config/local.env file")
             
             try:
-                self.llm_service = GoogleLLMService(
-                    api_key=google_key,
-                    model="gemini-2.0-flash"
-                )
-                self.logger.info("🤖 Google LLM service setup completed")
+                from app.interview_playground.llm.llm_service import LLMService
+                llm_service = LLMService(provider="google", api_key=google_key, model="gemini-2.0-flash-001")
+                self.llm_service = llm_service.setup_processor()
+                self.logger.info("🤖 LLM service setup completed")
                 return
             except ImportError as e:
-                self.logger.error(f"Google LLM service not available: {e}. Please install 'google-generativeai'")
+                self.logger.error(f"LLM service not available: {e}. Please check your imports.")
                 raise
             except Exception as e:
                 self.logger.error(f"Failed to setup Google LLM: {e}")
