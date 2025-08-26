@@ -99,18 +99,17 @@ class PipecatInterviewService:
             
             connection = self.connections[room_id]
             
-            # Import the MockInterviewBot class
-            from app.services.interview_bot import MockInterviewBot
+            # Import the InterviewBot class
+            from app.interview_playground.interview_bot import InterviewBot
             
-            # Create the real interview bot instance
-            logger.info(f"Creating MockInterviewBot for room_id: {room_id}")
-            bot = MockInterviewBot(connection, room_id)
+            # Create the interview bot instance
+            logger.info(f"Creating InterviewBot for room_id: {room_id}")
+            bot = InterviewBot(connection,room_id=room_id)
             
-            # Initialize the bot (setup all pipecat components)
-            logger.info(f"Initializing MockInterviewBot for room_id: {room_id}")
-            await bot.initialize()
-            
-            # Start the bot in the background
+            # Start the bot
+            logger.info(f"Starting InterviewBot for room_id: {room_id}")
+            success = await bot.initialize()
+                        # Start the bot in the background
             logger.info(f"Starting MockInterviewBot pipeline for room_id: {room_id}")
             bot_task = asyncio.create_task(bot.run())
             
@@ -247,13 +246,13 @@ class PipecatInterviewService:
             if room_id not in self.bot_instances:
                 return False
             
-            bot = self.bot_instances[room_id]
+            bot_instance = self.bot_instances[room_id]["bot"]
             # Update phase in bot instance
-            if hasattr(bot, 'update_phase'):
-                await bot.update_phase(phase)
+            if hasattr(bot_instance, 'update_phase'):
+                await bot_instance.update_phase(phase)
             else:
                 # For now, just log the phase update
-                logger.info(f"Phase updated to {phase} for room_id: {room_id}")
+                logger.info(f"Phase update not supported in simple InterviewBot: {phase}")
             
             return True
             
@@ -275,10 +274,10 @@ class PipecatInterviewService:
             if room_id not in self.bot_instances:
                 return False
             
-            bot = self.bot_instances[room_id]
+            bot_instance = self.bot_instances[room_id]["bot"]
             # Start timer in bot instance
-            if hasattr(bot, 'start_timer'):
-                await bot.start_timer()
+            if hasattr(bot_instance, 'start_timer'):
+                await bot_instance.start_timer()
             else:
                 # For now, just log the timer start
                 logger.info(f"Timer started for room_id: {room_id}")
@@ -303,10 +302,10 @@ class PipecatInterviewService:
             if room_id not in self.bot_instances:
                 return False
             
-            bot = self.bot_instances[room_id]
+            bot_instance = self.bot_instances[room_id]["bot"]
             # Pause timer in bot instance
-            if hasattr(bot, 'pause_timer'):
-                await bot.pause_timer()
+            if hasattr(bot_instance, 'pause_timer'):
+                await bot_instance.pause_timer()
             else:
                 # For now, just log the timer pause
                 logger.info(f"Timer paused for room_id: {room_id}")
@@ -331,10 +330,10 @@ class PipecatInterviewService:
             if room_id not in self.bot_instances:
                 return False
             
-            bot = self.bot_instances[room_id]
+            bot_instance = self.bot_instances[room_id]["bot"]
             # Reset timer in bot instance
-            if hasattr(bot, 'reset_timer'):
-                await bot.reset_timer()
+            if hasattr(bot_instance, 'reset_timer'):
+                await bot_instance.reset_timer()
             else:
                 # For now, just log the timer reset
                 logger.info(f"Timer reset for room_id: {room_id}")
@@ -392,9 +391,9 @@ class PipecatInterviewService:
             
             if bot_info.get("status") == "running" and "bot" in bot_info:
                 # Get detailed status from the actual bot instance
-                bot = bot_info["bot"]
-                if hasattr(bot, 'get_status'):
-                    bot_status = bot.get_status()
+                bot_instance = bot_info["bot"]
+                if hasattr(bot_instance, 'get_status'):
+                    bot_status = bot_instance.get_status()
                 else:
                     bot_status = {"phase": "unknown", "is_running": True}
                 

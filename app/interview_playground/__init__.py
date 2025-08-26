@@ -1,19 +1,23 @@
 """
 Interview Playground Package
 
-A Python package for interview-related functionality and utilities.
+A comprehensive package for building interview bots with:
+- STT (Speech-to-Text) processing with simple provider abstraction
+- TTS (Text-to-Speech) synthesis
+- Interview pipeline management
+- Bot orchestration
 """
 
-__version__ = "0.1.0"
-__author__ = "Interview Team"
-__description__ = "A playground package for interview-related features"
+from .stt import BaseSTT, DeepgramSTT, STTService
+from .interview_bot import InterviewBot
+from .pipeline.interview_pipeline import InterviewPipeline
 
-# Package-level imports can go here
-# from .core import *
-# from .utils import *
+__version__ = "1.0.0"
 
 __all__ = [
-    "__version__",
-    "__author__",
-    "__description__",
+    "BaseSTT",
+    "DeepgramSTT", 
+    "STTService",
+    "InterviewBot",
+    "InterviewPipeline"
 ]

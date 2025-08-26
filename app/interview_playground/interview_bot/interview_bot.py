@@ -21,8 +21,10 @@ from pipecat.transports.network.small_webrtc import SmallWebRTCTransport
 from pipecat.services.deepgram.stt import DeepgramSTTService
 from pipecat.services.deepgram.tts import DeepgramTTSService
 
+from app.interview_playground.stt.stt_service import STTService
 
-class MockInterviewBot:
+
+class InterviewBot:
     """Main orchestrator class for the mock interview bot."""
     
     def __init__(self, webrtc_connection, room_id: str = None):
@@ -165,7 +167,9 @@ class MockInterviewBot:
             if not deepgram_key:
                 raise ValueError("deepgram_api_key not found in settings. Please check your config/local.env file")
             
-            self.stt = DeepgramSTTService(api_key=deepgram_key)
+            sttService = STTService(api_key=deepgram_key, provider="deepgram")
+
+            self.stt = sttService.setup_processor()
             self.logger.info("🎤 STT service setup completed")
             
         except Exception as e:
