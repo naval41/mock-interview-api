@@ -18,10 +18,9 @@ from pipecat.services.gemini_multimodal_live.gemini import GeminiMultimodalLiveL
 from pipecat.services.google.llm import GoogleLLMService
 from pipecat.transports.base_transport import TransportParams
 from pipecat.transports.network.small_webrtc import SmallWebRTCTransport
-from pipecat.services.deepgram.stt import DeepgramSTTService
-from pipecat.services.deepgram.tts import DeepgramTTSService
 
 from app.interview_playground.stt.stt_service import STTService
+from app.interview_playground.tts.tts_service import TTSService
 
 
 class InterviewBot:
@@ -150,10 +149,8 @@ class InterviewBot:
             if not deepgram_key:
                 raise ValueError("deepgram_api_key not found in settings. Please check your config/local.env file")
             
-            self.tts = DeepgramTTSService(
-                api_key=deepgram_key,
-                voice="aura-2-andromeda-en"
-            )
+            ttsService = TTSService(provider="deepgram", api_key=deepgram_key)
+            self.tts = ttsService.setup_processor()
             self.logger.info("🔊 TTS service setup completed")
             
         except Exception as e:

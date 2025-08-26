@@ -3,12 +3,13 @@ Interview Playground Package
 
 A comprehensive package for building interview bots with:
 - STT (Speech-to-Text) processing with simple provider abstraction
-- TTS (Text-to-Speech) synthesis
+- TTS (Text-to-Speech) synthesis with simple provider abstraction
 - Interview pipeline management
 - Bot orchestration
 """
 
 from .stt import BaseSTT, DeepgramSTT, STTService
+from .tts import BaseTTS, DeepgramTTS, TTSService as TTSServiceClass
 from .interview_bot import InterviewBot
 from .pipeline.interview_pipeline import InterviewPipeline
 
@@ -18,6 +19,9 @@ __all__ = [
     "BaseSTT",
     "DeepgramSTT", 
     "STTService",
+    "BaseTTS",
+    "DeepgramTTS",
+    "TTSServiceClass",
     "InterviewBot",
     "InterviewPipeline"
 ]
