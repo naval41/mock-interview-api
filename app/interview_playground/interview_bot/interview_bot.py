@@ -20,6 +20,7 @@ from pipecat.transports.base_transport import TransportParams
 from pipecat.transports.network.small_webrtc import SmallWebRTCTransport
 
 from app.interview_playground.stt.stt_service import STTService
+from app.interview_playground.transport.transport_service import TransportService
 from app.interview_playground.tts.tts_service import TTSService
 
 
@@ -106,10 +107,8 @@ class InterviewBot:
                 vad_analyzer=vad_analyzer,  # Can be None
             )
             
-            self.transport = SmallWebRTCTransport(
-                webrtc_connection=self.webrtc_connection,
-                params=transport_params
-            )
+            transportService = TransportService(provider="webrtc", webrtc_connection=self.webrtc_connection, params=transport_params)
+            self.transport = transportService.setup_processor()
             
             self.logger.info("🔗 Transport setup completed")
             
