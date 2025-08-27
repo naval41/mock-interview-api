@@ -238,15 +238,33 @@ class InterviewBot:
             raise
     
     async def _setup_event_handlers(self):
-        """Setup event handlers for the pipeline."""
-        try:
-            # For now, let's skip the observer setup to avoid compatibility issues
-            # The pipeline already has observers configured in the task
-            self.logger.info("👁️ Event handlers setup completed (observers configured in pipeline)")
-            
-        except Exception as e:
-            self.logger.error(f"Failed to setup event handlers: {e}")
-            raise
+        """Setup all event handlers."""
+
+        # RTVI event handlers
+        @self.rtvi_processor.event_handler("on_client_ready")
+        async def on_client_ready(rtvi):
+            self.logger.info("Pipecat client ready.")
+            await rtvi.set_bot_ready()
+        
+        @self.rtvi_processor.event_handler("on_client_message")
+        async def on_client_message(rtvi, message):
+            """Handle client messages and forward them to our CodeContextProcessor"""
+            self.logger.info(f"RTVI client message received: {message}")
+        
+        # Transport event handlers
+        @self.transport.event_handler("on_client_connected")
+        async def on_client_connected(transport, client):
+            self.logger.info("Pipecat Client connected")
+            # Kick off the conversation
+            await self.task.queue_frames([self.context_aggregator.user().get_context_frame()])
+        
+        @self.transport.event_handler("on_client_disconnected")
+        async def on_client_disconnected(transport, client):
+            self.logger.info("Pipecat Client disconnected")
+            self.logger.info(f"Final Context Details : {self.context_aggregator}")
+            await self.task.cancel()
+        
+        self.logger.info("🎭 Event handlers setup completed")
     
     async def run(self):
         """Run the interview bot."""
