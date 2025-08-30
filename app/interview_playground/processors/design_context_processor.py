@@ -3,6 +3,8 @@ Design Context Processor implementation that extends BaseProcessor.
 """
 
 from pipecat.processors.frame_processor import FrameProcessor
+from pipecat.frames.frames import Frame
+from pipecat.processors.frame_processor import FrameDirection
 from app.interview_playground.processors.base_processor import BaseProcessor
 
 
@@ -14,56 +16,18 @@ class DesignContextProcessor(BaseProcessor):
         
         Args:
             max_design_elements: Maximum number of design elements to keep in context
-            design_patterns: Whether to detect and track design patterns
+            design_patterns: Whether to detect design patterns
         """
+        super().__init__(name="design_context_processor")
         self.max_design_elements = max_design_elements
         self.design_patterns = design_patterns
         self.design_elements = []
         self.design_context = {}
         
-    def setup_processor(self) -> FrameProcessor:
-        """Setup the Design Context Processor FrameProcessor instance.
-        
-        Returns:
-            FrameProcessor configured for design context processing
-        """
-        # For now, return a simple FrameProcessor
-        # In real implementation, this would return a design-specific processor
-        from pipecat.processors.frame_processor import FrameProcessor
-        
-        processor = FrameProcessor(name="design_context_processor")
-        # Here you would configure the processor with design-specific settings
-        
-        return processor
-        
-    async def process_message(self, message: str) -> dict:
-        """Process a design-related message and return the result.
-        
-        Args:
-            message: Message to process (could contain design concepts)
-            
-        Returns:
-            Dictionary containing processed result
-        """
-        # Detect if message contains design elements
-        design_elements = self._extract_design_elements(message)
-        design_type = self._detect_design_type(message)
-        
-        # Store design element if found
-        if design_elements:
-            self._add_design_element(design_elements, design_type)
-            
-        # Process the message for design context
-        processed_result = {
-            "type": "design_context",
-            "original_message": message,
-            "design_elements": design_elements,
-            "design_type": design_type,
-            "context_size": len(self.design_elements),
-            "processed": True
-        }
-        
-        return processed_result
+    # Remove the setup_processor method - it's no longer needed
+    
+    async def process_frame(self, frame: Frame, direction: FrameDirection):
+        pass
         
     def _extract_design_elements(self, message: str) -> list:
         """Extract design elements from a message.

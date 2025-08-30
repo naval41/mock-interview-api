@@ -126,16 +126,22 @@ class InterviewBot:
 
     async def _get_pipeline_components(self):
         
-        pipeline_components = [  
-                self.transport.input(),
-                self.stt,
-                self.context_aggregator.user(),
-                self.rtvi_processor,
-                self.llm_service,
-                self.tts,
-                self.transport.output(),
-                self.context_aggregator.assistant(),
+        pipeline_components = [
+            self.transport.input(),
+            self.stt,
+            self.context_aggregator.user(),
+            self.rtvi_processor
         ]
+
+        logger.info(f"Adding custom processor of length {len(self.custom_processors)}")
+        #pipeline_components.extend(self.custom_processors)
+        
+        pipeline_components.extend([
+            self.llm_service,
+            self.tts,
+            self.transport.output(),
+            self.context_aggregator.assistant()
+        ])
 
         return pipeline_components
 

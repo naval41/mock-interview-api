@@ -2,7 +2,9 @@
 Code Context Processor implementation that extends BaseProcessor.
 """
 
-from pipecat.processors.frame_processor import FrameProcessor
+from pipecat.frames.frames import Frame
+from pipecat.processors.frame_processor import FrameDirection
+from pipecat.processors.frameworks.rtvi import RTVIClientMessageFrame
 from app.interview_playground.processors.base_processor import BaseProcessor
 
 
@@ -16,54 +18,24 @@ class CodeContextProcessor(BaseProcessor):
             max_code_snippets: Maximum number of code snippets to keep in context
             language_detection: Whether to automatically detect programming language
         """
+        super().__init__(name="code_context_processor")
         self.max_code_snippets = max_code_snippets
         self.language_detection = language_detection
         self.code_snippets = []
         self.language_context = {}
         
-    def setup_processor(self) -> FrameProcessor:
-        """Setup the Code Context Processor FrameProcessor instance.
+    # Remove the setup_processor method - it's no longer needed
+    
+    async def process_frame(self, frame: Frame, direction: FrameDirection):
+        await super().process_frame(frame, direction)
         
-        Returns:
-            FrameProcessor configured for code context processing
-        """
-        # For now, return a simple FrameProcessor
-        # In real implementation, this would return a code-specific processor
-        from pipecat.processors.frame_processor import FrameProcessor
+        # Handle RTVI client messages for code and problem context
+        if isinstance(frame, RTVIClientMessageFrame):
+            # await self.message_handler.handle_rtvi_message(frame)
+            pass
         
-        processor = FrameProcessor(name="code_context_processor")
-        # Here you would configure the processor with code-specific settings
-        
-        return processor
-        
-    async def process_message(self, message: str) -> dict:
-        """Process a code-related message and return the result.
-        
-        Args:
-            message: Message to process (could contain code snippets)
-            
-        Returns:
-            Dictionary containing processed result
-        """
-        # Detect if message contains code
-        code_snippets = self._extract_code_snippets(message)
-        language = self._detect_language(message) if self.language_detection else "unknown"
-        
-        # Store code snippet if found
-        if code_snippets:
-            self._add_code_snippet(code_snippets, language)
-            
-        # Process the message for code context
-        processed_result = {
-            "type": "code_context",
-            "original_message": message,
-            "code_snippets": code_snippets,
-            "language": language,
-            "context_size": len(self.code_snippets),
-            "processed": True
-        }
-        
-        return processed_result
+        # Continue processing the frame
+        await self.push_frame(frame, direction)
         
     def _extract_code_snippets(self, message: str) -> list:
         """Extract code snippets from a message.

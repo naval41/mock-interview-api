@@ -25,8 +25,8 @@ class ProcessorsService:
         self._processors = {}
         self._initialized = False
         
-    def setup_processors(self) -> List[BaseProcessor]:
-        """Setup and return a list of processors based on configuration.
+    def setup_processors(self) -> list:
+        """Setup and return all configured processors.
         
         Returns:
             List of configured processors
@@ -39,9 +39,9 @@ class ProcessorsService:
                 "language_detection": self.kwargs.get("language_detection", True)
             }
             code_context_processor = CodeContextProcessor(**code_kwargs)
-            code_processor = code_context_processor.setup_processor()
-            self._processors["code"] = code_processor
-            processors.append(code_processor)
+            # Store the processor instance directly (it's now a FrameProcessor)
+            self._processors["code"] = code_context_processor
+            processors.append(code_context_processor)
             
         if self.design_context:
             design_kwargs = {
@@ -49,9 +49,9 @@ class ProcessorsService:
                 "design_patterns": self.kwargs.get("design_patterns", True)
             }
             design_context_processor = DesignContextProcessor(**design_kwargs)
-            design_processor = design_context_processor.setup_processor()
-            self._processors["design"] = design_processor
-            processors.append(design_processor)
+            # Store the processor instance directly (it's now a FrameProcessor)
+            self._processors["design"] = design_context_processor
+            processors.append(design_context_processor)
             
         self._initialized = True
         return processors
