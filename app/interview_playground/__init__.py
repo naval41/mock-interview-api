@@ -6,6 +6,7 @@ A comprehensive package for building interview bots with:
 - TTS (Text-to-Speech) synthesis with simple provider abstraction
 - LLM (Large Language Model) processing with simple provider abstraction
 - Transport with simple provider abstraction
+- Processors with simple provider abstraction
 - Interview pipeline management
 - Bot orchestration
 """
@@ -14,6 +15,7 @@ from .stt import BaseSTT, DeepgramSTT, STTService
 from .tts import BaseTTS, DeepgramTTS, TTSService as TTSServiceClass
 from .llm import BaseLLM, GoogleLLM, OpenAILLM, LLMService
 from .transport import BaseTransport, WebRTCTransport, TransportService
+from .processors import BaseProcessor, CodeContextProcessor, DesignContextProcessor, ProcessorsService
 from .interview_bot import InterviewBot
 from .pipeline.interview_pipeline import InterviewPipeline
 
@@ -33,6 +35,10 @@ __all__ = [
     "BaseTransport",
     "WebRTCTransport",
     "TransportService",
+    "BaseProcessor",
+    "CodeContextProcessor",
+    "DesignContextProcessor",
+    "ProcessorsService",
     "InterviewBot",
     "InterviewPipeline"
 ]

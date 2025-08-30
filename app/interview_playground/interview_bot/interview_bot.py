@@ -19,6 +19,7 @@ from pipecat.services.google.llm import GoogleLLMService
 from pipecat.transports.base_transport import TransportParams
 from pipecat.transports.network.small_webrtc import SmallWebRTCTransport
 
+from app.interview_playground.processors.processors_service import ProcessorsService
 from app.interview_playground.stt.stt_service import STTService
 from app.interview_playground.transport.transport_service import TransportService
 from app.interview_playground.tts.tts_service import TTSService
@@ -44,6 +45,15 @@ class InterviewBot:
         self.pipeline = None
         self.task = None
         self.runner = None
+        self.custom_processors = None
+
+                # Processors service for context processing
+        self.processors_service = ProcessorsService(
+            code_context=True,  # CodeContextProcessor is enabled
+            design_context=False,
+            max_code_snippets=10,
+            max_design_elements=15
+        )
         
         # Interview state
         self.is_running = False
@@ -72,6 +82,9 @@ class InterviewBot:
             
             # Initialize RTVI processor
             await self._setup_rtvi_processor()
+
+            # Initialize Custom processor
+            await self._setup_custom_processor()
             
             # Setup pipeline
             await self._setup_pipeline()
@@ -85,6 +98,48 @@ class InterviewBot:
             self.logger.error(f"Failed to initialize bot: {e}")
             raise
     
+    async def _setup_pipeline(self):
+        """Setup the audio processing pipeline."""
+        try:
+            
+            pipeline_componenets = await self._get_pipeline_components()
+            
+            self.pipeline = Pipeline(pipeline_componenets)  
+            
+            # Create pipeline task
+            self.task = PipelineTask(
+                self.pipeline,
+                params=PipelineParams(
+                    allow_interruptions=True
+                ),
+                observers=[RTVIObserver(self.rtvi_processor)],
+            )
+            
+            # Create pipeline runner
+            self.runner = PipelineRunner()
+            
+            self.logger.info("🔧 Pipeline setup completed (without transport)")
+            
+        except Exception as e:
+            self.logger.error(f"Failed to setup pipeline: {e}")
+            raise
+
+    async def _get_pipeline_components(self):
+        
+        pipeline_components = [  
+                self.transport.input(),
+                self.stt,
+                self.context_aggregator.user(),
+                self.rtvi_processor,
+                self.llm_service,
+                self.tts,
+                self.transport.output(),
+                self.context_aggregator.assistant(),
+        ]
+
+        return pipeline_components
+
+        
     async def _setup_transport(self):
         """Setup WebRTC transport."""
         try:
@@ -201,40 +256,20 @@ class InterviewBot:
         except Exception as e:
             self.logger.error(f"Failed to setup RTVI processor: {e}")
             raise
-    
-    async def _setup_pipeline(self):
-        """Setup the audio processing pipeline."""
-        try:
-            # For now, let's create a minimal pipeline without the transport
-            # The transport will be handled separately by the WebRTC connection
 
-            self.pipeline = Pipeline([
-                self.transport.input(),
-                self.stt,
-                self.context_aggregator.user(),
-                self.rtvi_processor,
-                self.llm_service,
-                self.tts,
-                self.transport.output(),
-                self.context_aggregator.assistant(),
-            ])  
-            
-            # Create pipeline task
-            self.task = PipelineTask(
-                self.pipeline,
-                params=PipelineParams(
-                    allow_interruptions=True
-                ),
-                observers=[RTVIObserver(self.rtvi_processor)],
-            )
-            
-            # Create pipeline runner
-            self.runner = PipelineRunner()
-            
-            self.logger.info("🔧 Pipeline setup completed (without transport)")
+    async def _setup_custom_processor(self):
+        """Setup RTVI processor for real-time voice interaction."""
+        try:
+            self.logger.info(f"🔧 Starting custom processors from service")
+        
+            # Get enabled processors from the processors service
+            self.custom_processors = self.processors_service.setup_processors()
+
+            self.logger.info(f"🔧 Setup {len(self.custom_processors)} processors from service")
+
             
         except Exception as e:
-            self.logger.error(f"Failed to setup pipeline: {e}")
+            self.logger.error(f"Failed to setup RTVI processor: {e}")
             raise
     
     async def _setup_event_handlers(self):
