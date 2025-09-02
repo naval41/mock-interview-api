@@ -1,5 +1,5 @@
-from sqlmodel import SQLModel, Field
-from typing import Optional
+from sqlmodel import SQLModel, Field, Relationship
+from typing import Optional, List
 from datetime import datetime
 
 class User(SQLModel, table=True):
@@ -19,6 +19,9 @@ class User(SQLModel, table=True):
     resetTokenExpiry: Optional[datetime] = Field(default=None)
     createdAt: datetime = Field(default_factory=datetime.utcnow, nullable=False)
     updatedAt: datetime = Field(default_factory=datetime.utcnow, nullable=False)
+    
+    # Relationships
+    candidateInterviews: Optional[List["CandidateInterview"]] = Relationship(back_populates="user")
 
 
 class UserCreate(SQLModel):

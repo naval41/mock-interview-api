@@ -29,6 +29,7 @@ async_session_maker = sessionmaker(
 
 
 async def get_async_session() -> AsyncSession:
+    """FastAPI dependency for getting database session"""
     async with async_session_maker() as session:
         try:
             yield session
@@ -40,6 +41,11 @@ async def get_async_session() -> AsyncSession:
             raise
         finally:
             await session.close()
+
+
+async def get_db_session() -> AsyncSession:
+    """Regular async function for getting database session (for use in services)"""
+    return async_session_maker()
 
 
 async def create_db_and_tables():

@@ -8,7 +8,7 @@ from app.core.config import settings
 from app.core.database import create_db_and_tables, close_db
 from app.core.logging import setup_logging
 from app.middleware.logging_middleware import LoggingMiddleware, StructlogMiddleware
-from app.controllers import auth_controller, product_controller, interview_controller
+from app.controllers import auth_controller, interview_controller, candidate_interview_controller, candidate_interview_planner_controller
 from app.services.pipecat_service import pipecat_service
 
 import structlog
@@ -62,8 +62,9 @@ app.add_middleware(
 # app.add_middleware(LoggingMiddleware)
 
 app.include_router(auth_controller.router, prefix=settings.api_prefix)
-app.include_router(product_controller.router, prefix=settings.api_prefix)
 app.include_router(interview_controller.router, prefix="")
+app.include_router(candidate_interview_controller.router, prefix=settings.api_prefix)
+app.include_router(candidate_interview_planner_controller.router, prefix=settings.api_prefix)
 
 
 @app.get("/")
