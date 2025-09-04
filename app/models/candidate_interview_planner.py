@@ -11,6 +11,7 @@ class CandidateInterviewPlannerBase(SQLModel):
     questionId: str = Field(index=True)
     knowledgeBankId: str = Field(index=True)
     interviewInstructions: Optional[str] = None
+    sequence: int = Field(description="Order/sequence of this planner in the interview workflow")
 
 
 class CandidateInterviewPlanner(CandidateInterviewPlannerBase, table=True):
@@ -43,7 +44,9 @@ class CandidateInterviewPlannerRead(CandidateInterviewPlannerBase):
     id: str
     createdAt: datetime
     updatedAt: datetime
+    sequence: int
 
 
 class CandidateInterviewPlannerUpdate(SQLModel):
     interviewInstructions: Optional[str] = None
+    sequence: Optional[int] = Field(None, description="Order/sequence of this planner in the interview workflow")

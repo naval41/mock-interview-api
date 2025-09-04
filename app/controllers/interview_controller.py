@@ -2,7 +2,7 @@
 Interview controller with pipecat integration for real-time voice interviews.
 """
 
-from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks
+from fastapi import APIRouter, Depends, HTTPException, Request, status, BackgroundTasks
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import get_async_session
 from app.core.security import validate_request
@@ -84,7 +84,7 @@ async def start_interview(
 
 @router.post("/offer")
 async def handle_webrtc_offer(
-    request: dict,
+    request: Request,
     background_tasks: BackgroundTasks
 ):
     """
@@ -93,9 +93,17 @@ async def handle_webrtc_offer(
     """
     try:
         logger.info(f"Received offer request: {request}")
-        room_id = request.get("room_id")
         
-        logger.info(f"Processing WebRTC offer for room {room_id}")
+        query_params = request.query_params
+        room_id = query_params.get("room_id")
+        user_id = query_params.get("user_id")
+        mock_interview_id = query_params.get("mock_interview_id")
+        
+        # Extract body parameters
+        body = await request.json()
+
+        
+        logger.info(f"Processing WebRTC offer for room {room_id}, user {user_id}, mock_interview_id {mock_interview_id}")
 
         # Check if connection already exists for this room
         if room_id and room_id in pipecat_service.connections:
@@ -105,16 +113,16 @@ async def handle_webrtc_offer(
             # Renegotiate existing connection
             await pipecat_service.renegotiate_connection(
                 room_id=room_id,
-                sdp=request["sdp"], 
-                sdp_type=request["type"], 
-                restart_pc=request.get("restart_pc", False)
+                sdp=body["sdp"], 
+                sdp_type=body["type"], 
+                restart_pc=body.get("restart_pc", False)
             )
         else:
             # Create new WebRTC connection
             answer = await pipecat_service.create_connection(
                 room_id=room_id,
-                sdp=request["sdp"],
-                sdp_type=request["type"]
+                sdp=body["sdp"],
+                sdp_type=body["type"]
             )
             
             # Start the interview bot in background
