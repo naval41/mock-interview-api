@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import get_async_session
 from app.core.security import validate_request
 from app.services.pipecat_service import pipecat_service
+from app.services.interview_context_service import interview_context_service
 from app.schemas.interview_schemas import (
     WebRTCOffer, WebRTCAnswer, StartInterviewRequest, StartInterviewResponse,
     InjectProblemRequest, InjectProblemResponse, InjectCustomContextRequest,
@@ -105,6 +106,31 @@ async def handle_webrtc_offer(
         
         logger.info(f"Processing WebRTC offer for room {room_id}, user {user_id}, mock_interview_id {mock_interview_id}")
 
+        # Build interview context if this is a new connection
+        interview_context = None
+        if not (room_id and room_id in pipecat_service.connections):
+            try:
+                # Create interview context from mock_interview_id and user_id
+                interview_context = await interview_context_service.build_interview_context(
+                    mock_interview_id=mock_interview_id,
+                    user_id=user_id,
+                    session_id=room_id  # Use room_id as session_id
+                )
+                logger.info(f"Built interview context for room {room_id}", 
+                           context_summary=interview_context.get_context_summary())
+            except ValueError as e:
+                logger.error(f"Failed to build interview context: {e}")
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"Invalid interview setup: {str(e)}"
+                )
+            except Exception as e:
+                logger.error(f"Unexpected error building interview context: {e}")
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail="Failed to initialize interview context"
+                )
+
         # Check if connection already exists for this room
         if room_id and room_id in pipecat_service.connections:
             pipecat_connection = pipecat_service.connections[room_id]
@@ -125,10 +151,11 @@ async def handle_webrtc_offer(
                 sdp_type=body["type"]
             )
             
-            # Start the interview bot in background
+            # Start the interview bot in background with interview context
             background_tasks.add_task(
                 pipecat_service.start_interview_bot, 
-                room_id
+                room_id,
+                interview_context  # Pass the interview context to the bot
             )
             
             logger.info(f"New WebRTC connection established for room {room_id}")

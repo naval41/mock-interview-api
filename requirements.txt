@@ -18,7 +18,7 @@ greenlet>=3.2.4
 # httpx>=0.25.2
 
 # Pipecat dependencies for interview functionality
-pipecat-ai[google,silero,webrtc,deepgram]==0.0.82
+pipecat-ai[google,silero,webrtc,deepgram]==0.0.84
 python-dotenv>=1.1.1
 opencv-python>=4.11.0
 loguru>=0.7.3

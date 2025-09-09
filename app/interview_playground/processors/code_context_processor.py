@@ -26,9 +26,8 @@ class CodeContextProcessor(BaseProcessor):
         
     # Remove the setup_processor method - it's no longer needed
     
-    async def process_frame(self, frame: Frame, direction: FrameDirection):
-        await super().process_frame(frame, direction)
-        
+    async def process_custom_frame(self, frame: Frame, direction: FrameDirection):
+        """Process frames after StartFrame validation."""
         # Handle RTVI client messages for code and problem context
         if isinstance(frame, RTVIClientMessageFrame):
             # await self.message_handler.handle_rtvi_message(frame)

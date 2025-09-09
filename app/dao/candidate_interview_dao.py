@@ -34,6 +34,26 @@ class CandidateInterviewDAO(BaseDAO[CandidateInterview]):
             logger.error("Error getting interviews by mock_interview_id", mock_interview_id=mock_interview_id, error=str(e))
             raise
 
+    async def get_by_mock_interview_and_user(
+        self, 
+        db: AsyncSession, 
+        mock_interview_id: str, 
+        user_id: str
+    ) -> Optional[CandidateInterview]:
+        """Get a specific interview by mock interview ID and user ID"""
+        try:
+            result = await db.execute(
+                select(CandidateInterview).where(
+                    CandidateInterview.mockInterviewId == mock_interview_id,
+                    CandidateInterview.userId == user_id
+                )
+            )
+            return result.scalar_one_or_none()
+        except Exception as e:
+            logger.error("Error getting interview by mock_interview_id and user_id", 
+                        mock_interview_id=mock_interview_id, user_id=user_id, error=str(e))
+            raise
+
     async def get_by_status(self, db: AsyncSession, status: CandidateInterviewStatus) -> List[CandidateInterview]:
         """Get all interviews with a specific status"""
         try:

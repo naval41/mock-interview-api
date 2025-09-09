@@ -26,8 +26,10 @@ class DesignContextProcessor(BaseProcessor):
         
     # Remove the setup_processor method - it's no longer needed
     
-    async def process_frame(self, frame: Frame, direction: FrameDirection):
-        pass
+    async def process_custom_frame(self, frame: Frame, direction: FrameDirection):
+        """Process frames after StartFrame validation."""
+        # Design context processing logic can be added here
+        await self.push_frame(frame, direction)
         
     def _extract_design_elements(self, message: str) -> list:
         """Extract design elements from a message.

@@ -28,12 +28,20 @@ from app.interview_playground.tts.tts_service import TTSService
 class InterviewBot:
     """Main orchestrator class for the mock interview bot."""
     
-    def __init__(self, webrtc_connection, room_id: str = None):
+    def __init__(self, webrtc_connection, room_id: str = None, interview_context=None):
         self.webrtc_connection = webrtc_connection
         self.room_id = room_id or getattr(webrtc_connection, 'pc_id', 'unknown')
+        self.interview_context = interview_context
         
         # Create a logger context for this session
         self.logger = logger.bind(room_id=self.room_id)
+        
+        # Log interview context if provided
+        if self.interview_context:
+            self.logger.info("Interview context loaded", 
+                           mock_interview_id=self.interview_context.mock_interview_id,
+                           planner_fields_count=len(self.interview_context.planner_fields),
+                           current_sequence=self.interview_context.current_workflow_step_sequence)
         
         # Pipecat components
         self.transport = None
@@ -134,7 +142,7 @@ class InterviewBot:
         ]
 
         logger.info(f"Adding custom processor of length {len(self.custom_processors)}")
-        #pipeline_components.extend(self.custom_processors)
+        pipeline_components.extend(self.custom_processors)
         
         pipeline_components.extend([
             self.llm_service,

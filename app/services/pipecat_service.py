@@ -80,17 +80,23 @@ class PipecatInterviewService:
             self.connections.pop(room_id, None)
             self.bot_instances.pop(room_id, None)
     
-    async def start_interview_bot(self, room_id: str) -> bool:
+    async def start_interview_bot(self, room_id: str, interview_context: Optional[Any] = None) -> bool:
         """
         Start the interview bot for a specific room.
         
         Args:
             room_id: Room identifier
+            interview_context: Optional interview context object with planner details
             
         Returns:
             True if bot started successfully, False otherwise
         """
         logger.info(f"Starting interview bot for room_id: {room_id}")
+        
+        if interview_context:
+            logger.info(f"Interview context provided", 
+                       mock_interview_id=interview_context.mock_interview_id,
+                       planner_fields_count=len(interview_context.planner_fields))
         
         try:
             if room_id not in self.connections:
@@ -102,9 +108,9 @@ class PipecatInterviewService:
             # Import the InterviewBot class
             from app.interview_playground.interview_bot import InterviewBot
             
-            # Create the interview bot instance
+            # Create the interview bot instance with interview context
             logger.info(f"Creating InterviewBot for room_id: {room_id}")
-            bot = InterviewBot(connection,room_id=room_id)
+            bot = InterviewBot(connection, room_id=room_id, interview_context=interview_context)
             
             # Start the bot
             logger.info(f"Starting InterviewBot for room_id: {room_id}")
