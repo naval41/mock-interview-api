@@ -6,10 +6,12 @@ This service handles the creation of InterviewContext entities from database dat
 from typing import Optional
 from datetime import time
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlmodel import select
 from app.core.database import get_db_session
 from app.dao.candidate_interview_dao import candidate_interview_dao
 from app.dao.candidate_interview_planner_dao import candidate_interview_planner_dao
 from app.entities.interview_context import InterviewContext, PlannerField
+from app.models.workflow import WorkflowStep
 import structlog
 import uuid
 
@@ -63,13 +65,17 @@ class InterviewContextService:
             if not interview_planners:
                 raise ValueError(f"No interview planners found for candidate interview: {candidate_interview.id}")
             
-            # Step 3: Create planner fields from planners
+            # Step 3: Create planner fields from planners (with duration from WorkflowStep)
             planner_fields = []
             for planner in interview_planners:
+                # Get duration from the related WorkflowStep
+                duration = await self._get_workflow_step_duration(db, planner.workflowStepId)
+                
                 planner_field = PlannerField(
                     question_id=planner.questionId,
                     knowledge_bank_id=planner.knowledgeBankId,
                     interview_instructions=planner.interviewInstructions,
+                    duration=duration,
                     sequence=planner.sequence
                     # start_time and end_time will be set separately when needed
                 )
@@ -271,6 +277,36 @@ class InterviewContextService:
                         sequence=sequence,
                         error=str(e))
             raise
+    
+    async def _get_workflow_step_duration(
+        self, 
+        db: AsyncSession, 
+        workflow_step_id: str
+    ) -> int:
+        """Get the duration from WorkflowStep for a given workflow step ID"""
+        try:
+            result = await db.execute(
+                select(WorkflowStep).where(WorkflowStep.id == workflow_step_id)
+            )
+            workflow_step = result.scalar_one_or_none()
+            
+            if not workflow_step:
+                logger.warning("WorkflowStep not found, using default duration", 
+                              workflow_step_id=workflow_step_id)
+                return 30  # Default 30 minutes if not found
+            
+            logger.debug("Retrieved workflow step duration", 
+                        workflow_step_id=workflow_step_id,
+                        duration=workflow_step.duration)
+            
+            return workflow_step.duration
+            
+        except Exception as e:
+            logger.error("Error getting workflow step duration", 
+                        workflow_step_id=workflow_step_id, 
+                        error=str(e))
+            # Return default duration on error
+            return 30
 
 
 # Create a singleton instance

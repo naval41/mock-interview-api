@@ -17,6 +17,7 @@ class PlannerField:
     question_id: str
     knowledge_bank_id: str
     interview_instructions: Optional[str]
+    duration: int  # Duration in minutes
     start_time: Optional[time] = None
     end_time: Optional[time] = None
     sequence: int = 0
@@ -29,6 +30,8 @@ class PlannerField:
             raise ValueError("knowledge_bank_id cannot be empty")
         if self.sequence < 0:
             raise ValueError("sequence cannot be negative")
+        if self.duration <= 0:
+            raise ValueError("duration must be positive (in minutes)")
     
     def to_dict(self) -> dict:
         """Convert the planner field to a dictionary representation"""
@@ -36,6 +39,7 @@ class PlannerField:
             "question_id": self.question_id,
             "knowledge_bank_id": self.knowledge_bank_id,
             "interview_instructions": self.interview_instructions,
+            "duration": self.duration,
             "start_time": self.start_time.isoformat() if self.start_time else None,
             "end_time": self.end_time.isoformat() if self.end_time else None,
             "sequence": self.sequence

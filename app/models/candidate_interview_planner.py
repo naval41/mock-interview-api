@@ -12,6 +12,7 @@ class CandidateInterviewPlannerBase(SQLModel):
     knowledgeBankId: str = Field(index=True)
     interviewInstructions: Optional[str] = None
     sequence: int = Field(description="Order/sequence of this planner in the interview workflow")
+    duration: int = Field(description="Duration in minutes for this planner step")
 
 
 class CandidateInterviewPlanner(CandidateInterviewPlannerBase, table=True):
@@ -45,8 +46,10 @@ class CandidateInterviewPlannerRead(CandidateInterviewPlannerBase):
     createdAt: datetime
     updatedAt: datetime
     sequence: int
+    duration: int
 
 
 class CandidateInterviewPlannerUpdate(SQLModel):
     interviewInstructions: Optional[str] = None
     sequence: Optional[int] = Field(None, description="Order/sequence of this planner in the interview workflow")
+    duration: Optional[int] = Field(None, description="Duration in minutes for this planner step")
