@@ -20,9 +20,11 @@ from pipecat.transports.base_transport import TransportParams
 from pipecat.transports.network.small_webrtc import SmallWebRTCTransport
 
 from app.interview_playground.processors.processors_service import ProcessorsService
+from app.interview_playground.processors.context_switch_processor import ContextSwitchProcessor
 from app.interview_playground.stt.stt_service import STTService
 from app.interview_playground.transport.transport_service import TransportService
 from app.interview_playground.tts.tts_service import TTSService
+from app.interview_playground.timer.interview_timer_monitor import InterviewTimerMonitor
 
 
 class InterviewBot:
@@ -54,6 +56,10 @@ class InterviewBot:
         self.task = None
         self.runner = None
         self.custom_processors = None
+        
+        # Timer and context management components
+        self.context_switch_processor = None
+        self.timer_monitor = None
 
                 # Processors service for context processing
         self.processors_service = ProcessorsService(
@@ -94,11 +100,20 @@ class InterviewBot:
             # Initialize Custom processor
             await self._setup_custom_processor()
             
+            # Initialize Context Switch processor
+            await self._setup_context_switch_processor()
+            
+            # Initialize Timer Monitor
+            await self._setup_timer_monitor()
+            
             # Setup pipeline
             await self._setup_pipeline()
             
             # Setup event handlers
             await self._setup_event_handlers()
+            
+            # Start initial planner timer if interview context exists
+            await self._start_initial_interview_phase()
             
             self.logger.info("🎯 Mock Interview Bot initialized successfully")
             
@@ -186,17 +201,30 @@ class InterviewBot:
             raise
     
     async def _setup_llm_service(self):
-        """Setup LLM service using Google API key."""
+        """Setup LLM service using Google API key with initial planner instructions."""
         try:
             google_key = settings.google_api_key
             if not google_key:
                 raise ValueError("google_api_key not found in settings. Please check your config/local.env file")
             
+            # Get initial planner instructions if interview context is available
+            initial_instructions = self._get_initial_planner_instructions()
+            
             try:
                 from app.interview_playground.llm.llm_service import LLMService
-                llm_service = LLMService(provider="google", api_key=google_key, model="gemini-2.0-flash-001")
+                llm_service = LLMService(
+                    provider="google", 
+                    api_key=google_key, 
+                    model="gemini-2.0-flash-001",
+                    custom_instructions=initial_instructions
+                )
                 self.llm_service = llm_service.setup_processor()
-                self.logger.info("🤖 LLM service setup completed")
+                
+                if initial_instructions:
+                    self.logger.info("🤖 LLM service setup completed with initial planner instructions", 
+                                   instructions_length=len(initial_instructions))
+                else:
+                    self.logger.info("🤖 LLM service setup completed with default instructions")
                 return
             except ImportError as e:
                 self.logger.error(f"LLM service not available: {e}. Please check your imports.")
@@ -286,6 +314,179 @@ class InterviewBot:
             self.logger.error(f"Failed to setup RTVI processor: {e}")
             raise
     
+    async def _setup_context_switch_processor(self):
+        """Setup Context Switch processor for managing LLM instruction transitions."""
+        try:
+            if not self.interview_context:
+                self.logger.warning("No interview context available for context switch processor")
+                return
+            
+            self.context_switch_processor = ContextSwitchProcessor(self.interview_context)
+            self.logger.info("🔄 Context Switch processor setup completed")
+            
+        except Exception as e:
+            self.logger.error(f"Failed to setup Context Switch processor: {e}")
+            raise
+    
+    async def _setup_timer_monitor(self):
+        """Setup Timer Monitor for managing interview phase timers."""
+        try:
+            if not self.interview_context:
+                self.logger.warning("No interview context available for timer monitor")
+                return
+            
+            # Create timer monitor with context processor and callback
+            self.timer_monitor = InterviewTimerMonitor(
+                interview_context=self.interview_context,
+                context_processor=self.context_switch_processor,
+                timer_callback=self._on_timer_event
+            )
+            
+            self.logger.info("⏱️ Timer Monitor setup completed")
+            
+        except Exception as e:
+            self.logger.error(f"Failed to setup Timer Monitor: {e}")
+            raise
+    
+    async def _start_initial_interview_phase(self):
+        """Start the initial interview phase with first planner field."""
+        try:
+            if not self.interview_context or not self.timer_monitor:
+                self.logger.info("Skipping initial phase start - missing components")
+                return
+            
+            # Get the first planner field
+            current_planner = self.interview_context.get_current_planner_field()
+            if not current_planner:
+                self.logger.warning("No planner fields available to start interview")
+                return
+            
+            # Note: Initial instructions are already injected during LLM setup
+            # No need to inject again here to avoid separate threads
+            
+            # Start the timer for the first planner
+            timer_started = await self.timer_monitor.start_current_planner_timer()
+            if timer_started:
+                self.logger.info("🚀 Initial interview phase started", 
+                               sequence=current_planner.sequence,
+                               duration_minutes=current_planner.duration,
+                               question_id=current_planner.question_id,
+                               note="Instructions already loaded in LLM initialization")
+            else:
+                self.logger.error("Failed to start initial timer")
+            
+        except Exception as e:
+            self.logger.error(f"Failed to start initial interview phase: {e}")
+    
+    def _get_initial_planner_instructions(self) -> str:
+        """Get the initial planner field instructions for LLM initialization.
+        
+        Returns:
+            Initial planner instructions or None if not available
+        """
+        try:
+            if not self.interview_context:
+                self.logger.debug("No interview context available for initial instructions")
+                return None
+            
+            # Get the first planner field (sequence 0)
+            current_planner = self.interview_context.get_current_planner_field()
+            if not current_planner:
+                self.logger.debug("No current planner field available for initial instructions")
+                return None
+            
+            instructions = current_planner.interview_instructions
+            if not instructions or instructions.strip() == "":
+                self.logger.debug("No instructions in first planner field, will use defaults")
+                return None
+            
+            # Format the instructions with context information
+            formatted_instructions = self._format_initial_instructions(instructions, current_planner)
+            
+            self.logger.info("Retrieved initial planner instructions", 
+                           sequence=current_planner.sequence,
+                           question_id=current_planner.question_id,
+                           duration_minutes=current_planner.duration,
+                           instructions_length=len(formatted_instructions))
+            
+            return formatted_instructions
+            
+        except Exception as e:
+            self.logger.error(f"Error getting initial planner instructions: {e}")
+            return None
+    
+    def _format_initial_instructions(self, instructions: str, planner_field) -> str:
+        """Format initial instructions with context information.
+        
+        Args:
+            instructions: Raw instructions from planner field
+            planner_field: The planner field containing the instructions
+            
+        Returns:
+            Formatted instructions string
+        """
+        session_info = f"""
+--- INTERVIEW SESSION CONTEXT ---
+
+Interview ID: {self.interview_context.mock_interview_id}
+Session ID: {self.interview_context.session_id}
+Current Phase: {planner_field.sequence + 1} of {len(self.interview_context.planner_fields)}
+Phase Duration: {planner_field.duration} minutes
+Question ID: {planner_field.question_id}
+
+--- PHASE INSTRUCTIONS ---
+
+{instructions}
+
+--- END CONTEXT ---
+
+Please begin the interview following these specific instructions for this phase.
+"""
+        return session_info
+    
+    async def _on_timer_event(self, event_type: str, event_data: dict):
+        """Handle timer events from the timer monitor.
+        
+        Args:
+            event_type: Type of timer event (timer_started, timer_expired, etc.)
+            event_data: Event-specific data
+        """
+        try:
+            self.logger.info(f"Timer event received: {event_type}", **event_data)
+            
+            if event_type == "timer_started":
+                planner_field = event_data.get("planner_field")
+                if planner_field:
+                    self.interview_phase = f"phase_{planner_field.sequence}"
+            
+            elif event_type == "timer_expired":
+                completed_planner = event_data.get("completed_planner")
+                if completed_planner:
+                    self.logger.info("Phase completed", 
+                                   sequence=completed_planner.sequence,
+                                   question_id=completed_planner.question_id)
+            
+            elif event_type == "planner_transitioned":
+                new_planner = event_data.get("new_planner")
+                transition_count = event_data.get("transition_count", 0)
+                if new_planner:
+                    self.interview_phase = f"phase_{new_planner.sequence}"
+                    self.logger.info("Transitioned to new phase", 
+                                   new_sequence=new_planner.sequence,
+                                   question_id=new_planner.question_id,
+                                   total_transitions=transition_count)
+            
+            elif event_type == "interview_finalized":
+                total_transitions = event_data.get("total_transitions", 0)
+                session_duration = event_data.get("session_duration_seconds", 0)
+                self.interview_phase = "completed"
+                self.logger.info("Interview completed", 
+                               total_phases=total_transitions + 1,
+                               session_duration_minutes=session_duration // 60)
+            
+        except Exception as e:
+            self.logger.error(f"Error handling timer event: {e}", event_type=event_type)
+    
     async def _setup_event_handlers(self):
         """Setup all event handlers."""
 
@@ -337,6 +538,11 @@ class InterviewBot:
     async def stop(self):
         """Stop the interview bot."""
         try:
+            # Stop timer monitor first
+            if self.timer_monitor:
+                await self.timer_monitor.stop_current_timer()
+                self.logger.info("Timer monitor stopped")
+            
             if self.runner:
                 await self.runner.stop()
             
@@ -379,7 +585,7 @@ class InterviewBot:
     
     def get_status(self) -> Dict[str, Any]:
         """Get the current status of the bot."""
-        return {
+        status = {
             "room_id": self.room_id,
             "is_running": self.is_running,
             "interview_phase": self.interview_phase,
@@ -391,6 +597,63 @@ class InterviewBot:
                 "stt": self.stt is not None,
                 "context_aggregator": self.context_aggregator is not None,
                 "rtvi_processor": self.rtvi_processor is not None,
-                "pipeline": self.pipeline is not None
+                "pipeline": self.pipeline is not None,
+                "context_switch_processor": self.context_switch_processor is not None,
+                "timer_monitor": self.timer_monitor is not None
             }
         }
+        
+        # Add timer status if available
+        if self.timer_monitor:
+            status["timer_status"] = self.timer_monitor.get_timer_status()
+        
+        # Add context switch processor status if available
+        if self.context_switch_processor:
+            status["context_processor_status"] = self.context_switch_processor.get_processor_status()
+        
+        # Add interview context summary if available
+        if self.interview_context:
+            status["interview_context"] = self.interview_context.get_context_summary()
+        
+        return status
+    
+    async def get_timer_status(self) -> dict:
+        """Get detailed timer status."""
+        if not self.timer_monitor:
+            return {"error": "Timer monitor not available"}
+        
+        return self.timer_monitor.get_timer_status()
+    
+    async def pause_timer(self) -> bool:
+        """Pause the current timer."""
+        if not self.timer_monitor:
+            self.logger.warning("Timer monitor not available for pause")
+            return False
+        
+        return await self.timer_monitor.pause_timer()
+    
+    async def resume_timer(self) -> bool:
+        """Resume the paused timer."""
+        if not self.timer_monitor:
+            self.logger.warning("Timer monitor not available for resume")
+            return False
+        
+        return await self.timer_monitor.resume_timer()
+    
+    async def skip_to_next_phase(self) -> bool:
+        """Manually skip to the next interview phase."""
+        try:
+            if not self.timer_monitor:
+                self.logger.warning("Timer monitor not available for phase skip")
+                return False
+            
+            # Stop current timer and transition
+            await self.timer_monitor.stop_current_timer()
+            await self.timer_monitor.transition_to_next_planner()
+            
+            self.logger.info("Manually skipped to next interview phase")
+            return True
+            
+        except Exception as e:
+            self.logger.error(f"Failed to skip to next phase: {e}")
+            return False

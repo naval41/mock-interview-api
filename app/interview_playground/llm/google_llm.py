@@ -9,15 +9,17 @@ from pipecat.services.google.llm import GoogleLLMService
 class GoogleLLM(BaseLLM):
     """Google LLM implementation."""
     
-    def __init__(self, api_key: str, model: str = "gemini-2.0-flash"):
+    def __init__(self, api_key: str, model: str = "gemini-2.0-flash", custom_instructions: str = None):
         """Initialize Google LLM.
         
         Args:
             api_key: Google API key
             model: Model name for generation
+            custom_instructions: Optional custom system instructions to override defaults
         """
         self.api_key = api_key
         self.model = model
+        self.custom_instructions = custom_instructions
         
     def setup_processor(self) -> FrameProcessor:
         """Setup the Google LLM FrameProcessor instance.
@@ -27,9 +29,28 @@ class GoogleLLM(BaseLLM):
         """
         from pipecat.processors.frame_processor import FrameProcessor
 
+        # Use custom instructions if provided, otherwise use default
+        if self.custom_instructions:
+            systemInstructions = self.custom_instructions
+        else:
+            systemInstructions = self._get_default_system_instructions()
+        
+        processor = GoogleLLMService(
+            model=self.model,
+            api_key=self.api_key,
+            system_instruction=systemInstructions
+        )
 
-        systemInstructions = """
-You are a professional technical interviewer designed to conduct realistic and structured mock interviews for software engineering candidates. Your role is to simulate a human interviewer with strong domain expertise, clear communication, and a focus on evaluating the candidate's skills, reasoning, and problem-solving ability.
+        return processor
+    
+    def _get_default_system_instructions(self) -> str:
+        """Get the default system instructions for the LLM.
+        
+        Returns:
+            Default system instructions string
+        """
+        return """
+You are a professional technical interviewer designed to conduct realistic and structured interviews for software engineering candidates. Your role is to simulate a human interviewer with strong domain expertise, clear communication, and a focus on evaluating the candidate's skills, reasoning, and problem-solving ability.
 
 You must follow these **interview guidelines**:
 
@@ -75,11 +96,4 @@ Design a system like a Twitter.
 * **Behavioral:** Clarity, ownership, decision-making, adaptability
 
 Your goal is to help the candidate **practice effectively, think deeply, and grow technically**.
-"""        
-        processor = GoogleLLMService(
-            model=self.model,
-            api_key=self.api_key,
-            system_instruction=systemInstructions
-        )
-
-        return processor
+"""

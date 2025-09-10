@@ -15,7 +15,8 @@ from .stt import BaseSTT, DeepgramSTT, STTService
 from .tts import BaseTTS, DeepgramTTS, TTSService as TTSServiceClass
 from .llm import BaseLLM, GoogleLLM, OpenAILLM, LLMService
 from .transport import BaseTransport, WebRTCTransport, TransportService
-from .processors import BaseProcessor, CodeContextProcessor, DesignContextProcessor, ProcessorsService
+from .processors import BaseProcessor, CodeContextProcessor, DesignContextProcessor, ContextSwitchProcessor, ProcessorsService
+from .timer import InterviewTimerMonitor
 from .interview_bot import InterviewBot
 from .pipeline.interview_pipeline import InterviewPipeline
 
@@ -38,7 +39,9 @@ __all__ = [
     "BaseProcessor",
     "CodeContextProcessor",
     "DesignContextProcessor",
+    "ContextSwitchProcessor",
     "ProcessorsService",
+    "InterviewTimerMonitor",
     "InterviewBot",
     "InterviewPipeline"
 ]

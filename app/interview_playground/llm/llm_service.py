@@ -21,17 +21,18 @@ class LLMService:
         self.kwargs = kwargs
         self._llm_instance = None
         
-    def create_google(self, api_key: str, model: str = "gemini-2.0-flash") -> BaseLLM:
+    def create_google(self, api_key: str, model: str = "gemini-2.0-flash", custom_instructions: str = None) -> BaseLLM:
         """Create a Google LLM instance.
         
         Args:
             api_key: Google API key
             model: Model name for generation
+            custom_instructions: Optional custom system instructions
             
         Returns:
             GoogleLLM instance
         """
-        return GoogleLLM(api_key=api_key, model=model)
+        return GoogleLLM(api_key=api_key, model=model, custom_instructions=custom_instructions)
         
     def create_openai(self, api_key: str, model: str = "gpt-4") -> BaseLLM:
         """Create an OpenAI LLM instance.
@@ -58,7 +59,8 @@ class LLMService:
         if provider.lower() == "google":
             api_key = kwargs.get("api_key", "")
             model = kwargs.get("model", "gemini-2.0-flash")
-            return self.create_google(api_key, model)
+            custom_instructions = kwargs.get("custom_instructions")
+            return self.create_google(api_key, model, custom_instructions)
         elif provider.lower() == "openai":
             api_key = kwargs.get("api_key", "")
             model = kwargs.get("model", "gpt-4")
@@ -76,7 +78,8 @@ class LLMService:
             if self.provider.lower() == "google":
                 api_key = self.kwargs.get("api_key", "")
                 model = self.kwargs.get("model", "gemini-2.0-flash")
-                self._llm_instance = self.create_google(api_key, model)
+                custom_instructions = self.kwargs.get("custom_instructions")
+                self._llm_instance = self.create_google(api_key, model, custom_instructions)
             elif self.provider.lower() == "openai":
                 api_key = self.kwargs.get("api_key", "")
                 model = self.kwargs.get("model", "gpt-4")
