@@ -81,10 +81,11 @@ class InterviewTimerMonitor:
             self.is_paused = False
             self.total_paused_duration = 0
             
-            self.logger.info("Started planner timer", 
+            self.logger.info("🚀 Started planner timer", 
                            sequence=current_planner.sequence,
                            duration_minutes=current_planner.duration,
-                           question_id=current_planner.question_id)
+                           question_id=current_planner.question_id,
+                           expected_end_time=(self.start_time + timedelta(minutes=current_planner.duration)).isoformat())
             
             # Trigger callback if provided
             if self.timer_callback:
@@ -288,11 +289,22 @@ class InterviewTimerMonitor:
     async def _run_monitor(self):
         """Internal monitoring task for periodic status updates."""
         try:
+            update_count = 0
             while self.is_running:
-                await asyncio.sleep(30)  # Update every 30 seconds
+                await asyncio.sleep(10)  # Update every 10 seconds (more frequent)
                 if self.is_running:  # Check again after sleep
+                    update_count += 1
                     status = self.get_timer_status()
-                    self.logger.debug("Timer status update", **status)
+                    
+                    # Log INFO level every 30 seconds (every 3rd update), DEBUG level every 10 seconds
+                    if update_count % 3 == 0:
+                        self.logger.info("⏱️ Timer status update", 
+                                       remaining_minutes=status["remaining_time_seconds"] // 60,
+                                       progress_percent=status["progress_percentage"],
+                                       current_sequence=status["current_sequence"],
+                                       is_paused=status["is_paused"])
+                    else:
+                        self.logger.debug("Timer status update", **status)
                     
         except asyncio.CancelledError:
             self.logger.debug("Monitor task cancelled")
@@ -304,9 +316,10 @@ class InterviewTimerMonitor:
         try:
             current_planner = self.interview_context.get_current_planner_field()
             
-            self.logger.info("Timer expired, transitioning to next planner", 
+            self.logger.info("⏰ Timer expired, transitioning to next planner", 
                            current_sequence=self.interview_context.current_workflow_step_sequence,
-                           current_planner_id=current_planner.question_id if current_planner else None)
+                           current_planner_id=current_planner.question_id if current_planner else None,
+                           completion_time=datetime.utcnow().isoformat())
             
             # Trigger callback if provided
             if self.timer_callback:
@@ -330,10 +343,11 @@ class InterviewTimerMonitor:
             
             if next_planner:
                 # Continue with next planner
-                self.logger.info("Transitioning to next planner", 
+                self.logger.info("🔄 Transitioning to next planner", 
                                new_sequence=next_planner.sequence,
                                question_id=next_planner.question_id,
-                               duration_minutes=next_planner.duration)
+                               duration_minutes=next_planner.duration,
+                               transition_number=self.transitions_completed)
                 
                 # Inject new instructions if context processor is available
                 if self.context_processor:
@@ -366,10 +380,12 @@ class InterviewTimerMonitor:
             
             session_duration = self.interview_context.get_session_duration()
             
-            self.logger.info("Interview finalized - all planner fields completed", 
+            self.logger.info("🏁 Interview finalized - all planner fields completed", 
                            total_transitions=self.transitions_completed,
                            session_duration_seconds=session_duration,
-                           total_planner_fields=len(self.interview_context.planner_fields))
+                           session_duration_minutes=session_duration // 60,
+                           total_planner_fields=len(self.interview_context.planner_fields),
+                           finalization_time=datetime.utcnow().isoformat())
             
             # Trigger callback if provided
             if self.timer_callback:
@@ -380,3 +396,4 @@ class InterviewTimerMonitor:
                 
         except Exception as e:
             self.logger.error("Failed to finalize interview", error=str(e))
+

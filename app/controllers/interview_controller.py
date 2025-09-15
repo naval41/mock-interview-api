@@ -482,3 +482,55 @@ async def reset_interview_timer(room_id: str):
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to reset interview timer"
         )
+
+
+@router.get("/interview/{room_id}/timer/status")
+async def get_timer_status(room_id: str):
+    """Get detailed timer status for debugging."""
+    try:
+        bot_instance = pipecat_service.get_bot_instance(room_id)
+        if not bot_instance:
+            raise HTTPException(status_code=404, detail="Interview bot not found")
+        
+        if not bot_instance.timer_monitor:
+            return {
+                "success": False, 
+                "message": "Timer monitor not available",
+                "room_id": room_id
+            }
+        
+        # Get comprehensive timer status
+        timer_status = bot_instance.timer_monitor.get_timer_status()
+        
+        # Add additional context information
+        interview_context = bot_instance.interview_context
+        current_planner = interview_context.get_current_planner_field() if interview_context else None
+        
+        status_response = {
+            "success": True,
+            "room_id": room_id,
+            "timer_status": timer_status,
+            "interview_context": {
+                "mock_interview_id": interview_context.mock_interview_id if interview_context else None,
+                "session_id": interview_context.session_id if interview_context else None,
+                "current_planner": {
+                    "sequence": current_planner.sequence if current_planner else None,
+                    "question_id": current_planner.question_id if current_planner else None,
+                    "duration": current_planner.duration if current_planner else None,
+                    "question_type": current_planner.question_type if current_planner else None
+                } if current_planner else None,
+                "total_planner_fields": len(interview_context.planner_fields) if interview_context else 0
+            },
+            "bot_status": {
+                "is_running": hasattr(bot_instance, 'is_running') and bot_instance.is_running,
+                "interview_phase": getattr(bot_instance, 'interview_phase', None)
+            },
+            "timestamp": datetime.utcnow().isoformat()
+        }
+        
+        logger.info("Timer status retrieved", room_id=room_id, **timer_status)
+        return status_response
+        
+    except Exception as e:
+        logger.error("Failed to get timer status", room_id=room_id, error=str(e))
+        raise HTTPException(status_code=500, detail=f"Failed to get timer status: {e}")

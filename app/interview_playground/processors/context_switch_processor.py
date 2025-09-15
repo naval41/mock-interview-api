@@ -3,7 +3,7 @@ ContextSwitchProcessor for managing LLM instruction transitions during interview
 """
 
 from datetime import datetime
-from pipecat.frames.frames import Frame, TextFrame, LLMMessagesFrame
+from pipecat.frames.frames import Frame, TextFrame, LLMMessagesUpdateFrame
 from pipecat.processors.frame_processor import FrameDirection
 from pipecat.processors.frameworks.rtvi import RTVIClientMessageFrame
 from app.interview_playground.processors.base_processor import BaseProcessor
@@ -143,14 +143,15 @@ class ContextSwitchProcessor(BaseProcessor):
 
 You are now entering Phase {planner_field.sequence + 1} of the interview.
 
+Please smoothly transition to this new phase while maintaining the conversational flow. 
+Acknowledge the phase change naturally and begin following the new instructions.
+
 Duration: {planner_field.duration} minutes
 Focus Area: Question ID {planner_field.question_id}
 
 New Instructions:
-{instructions}
 
-Please smoothly transition to this new phase while maintaining the conversational flow. 
-Acknowledge the phase change naturally and begin following the new instructions.
+{instructions}
 
 --- END PHASE TRANSITION ---
 """
@@ -182,25 +183,49 @@ Please provide a natural conclusion to the interview, thank the candidate, and p
 """
         return closure_message
     
-    def _create_llm_context_frame(self, message: str) -> LLMMessagesFrame:
+    def _create_llm_context_frame(self, message: str) -> LLMMessagesUpdateFrame:
         """Create an LLM context frame with the given message.
         
         Args:
             message: The message to include in the context frame
             
         Returns:
-            LLMMessagesFrame for injection into the pipeline
+            LLMMessagesUpdateFrame for injection into the pipeline
         """
-        # Create a system message for context injection
-        messages = [
-            {
-                "role": "system",
-                "content": message,
-                "timestamp": datetime.utcnow().isoformat()
-            }
-        ]
-        
-        return LLMMessagesFrame(messages=messages)
+        try:
+            # Try Google-specific message format first
+            from pipecat.services.google.llm import GoogleLLMContextMessage
+            
+            # Create a system message for context injection using Google message format
+            system_message = GoogleLLMContextMessage(
+                role="system",
+                content=message
+            )
+            
+            return LLMMessagesUpdateFrame(messages=[system_message], run_llm=True)
+            
+        except ImportError:
+            try:
+                # Fallback to OpenAI format
+                from pipecat.services.openai import OpenAILLMContextMessage
+                
+                system_message = OpenAILLMContextMessage(
+                    role="system",
+                    content=message
+                )
+                
+                return LLMMessagesUpdateFrame(messages=[system_message], run_llm=True)
+                
+            except ImportError:
+                # Final fallback to simple dict format
+                self.logger.warning("Using fallback dict message format for LLM context")
+                messages = [
+                    {
+                        "role": "system", 
+                        "content": message
+                    }
+                ]
+                return LLMMessagesUpdateFrame(messages=messages, run_llm=True)
     
     def _get_default_instructions(self) -> str:
         """Get default instructions when planner field instructions are empty.

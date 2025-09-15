@@ -6,12 +6,10 @@ This service handles the creation of InterviewContext entities from database dat
 from typing import Optional
 from datetime import time
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlmodel import select
 from app.core.database import get_db_session
 from app.dao.candidate_interview_dao import candidate_interview_dao
 from app.dao.candidate_interview_planner_dao import candidate_interview_planner_dao
 from app.entities.interview_context import InterviewContext, PlannerField
-from app.models.workflow import WorkflowStep
 import structlog
 import uuid
 
@@ -65,17 +63,14 @@ class InterviewContextService:
             if not interview_planners:
                 raise ValueError(f"No interview planners found for candidate interview: {candidate_interview.id}")
             
-            # Step 3: Create planner fields from planners (with duration from WorkflowStep)
+            # Step 3: Create planner fields from planners (using duration directly from planner)
             planner_fields = []
             for planner in interview_planners:
-                # Get duration from the related WorkflowStep
-                duration = await self._get_workflow_step_duration(db, planner.workflowStepId)
-                
                 planner_field = PlannerField(
                     question_id=planner.questionId,
                     knowledge_bank_id=planner.knowledgeBankId,
                     interview_instructions=planner.interviewInstructions,
-                    duration=duration,
+                    duration=planner.duration,  # Use duration directly from planner
                     sequence=planner.sequence
                     # start_time and end_time will be set separately when needed
                 )
@@ -83,12 +78,16 @@ class InterviewContextService:
             
             # Step 4: Build the InterviewContext with planner fields
             first_planner = interview_planners[0]  # First in sequence
+            
+            # Start with the actual sequence of the first planner (might be 1, not 0)
+            initial_sequence = first_planner.sequence
+            
             interview_context = InterviewContext(
                 mock_interview_id=mock_interview_id,
                 user_id=user_id,
                 session_id=session_id,
                 interview_planner_id=first_planner.id,
-                current_workflow_step_sequence=0,  # Start at sequence 0
+                current_workflow_step_sequence=initial_sequence,  # Use actual first sequence
                 current_question_id=first_planner.questionId,
                 current_workflow_step_id=first_planner.workflowStepId,
                 planner_fields=planner_fields
@@ -99,7 +98,10 @@ class InterviewContextService:
                        interview_planner_id=first_planner.id,
                        question_id=first_planner.questionId,
                        workflow_step_id=first_planner.workflowStepId,
-                       planner_fields_count=len(planner_fields))
+                       initial_sequence=initial_sequence,
+                       planner_fields_count=len(planner_fields),
+                       total_duration_minutes=sum(pf.duration for pf in planner_fields),
+                       planner_sequences=[pf.sequence for pf in planner_fields])
             
             return interview_context
             
@@ -278,35 +280,6 @@ class InterviewContextService:
                         error=str(e))
             raise
     
-    async def _get_workflow_step_duration(
-        self, 
-        db: AsyncSession, 
-        workflow_step_id: str
-    ) -> int:
-        """Get the duration from WorkflowStep for a given workflow step ID"""
-        try:
-            result = await db.execute(
-                select(WorkflowStep).where(WorkflowStep.id == workflow_step_id)
-            )
-            workflow_step = result.scalar_one_or_none()
-            
-            if not workflow_step:
-                logger.warning("WorkflowStep not found, using default duration", 
-                              workflow_step_id=workflow_step_id)
-                return 30  # Default 30 minutes if not found
-            
-            logger.debug("Retrieved workflow step duration", 
-                        workflow_step_id=workflow_step_id,
-                        duration=workflow_step.duration)
-            
-            return workflow_step.duration
-            
-        except Exception as e:
-            logger.error("Error getting workflow step duration", 
-                        workflow_step_id=workflow_step_id, 
-                        error=str(e))
-            # Return default duration on error
-            return 30
 
 
 # Create a singleton instance

@@ -5,6 +5,9 @@ Google LLM implementation that extends BaseLLM.
 from pipecat.processors.frame_processor import FrameProcessor
 from app.interview_playground.llm.base_llm import BaseLLM
 from pipecat.services.google.llm import GoogleLLMService
+import structlog
+
+logger = structlog.get_logger()
 
 class GoogleLLM(BaseLLM):
     """Google LLM implementation."""
@@ -32,8 +35,23 @@ class GoogleLLM(BaseLLM):
         # Use custom instructions if provided, otherwise use default
         if self.custom_instructions:
             systemInstructions = self.custom_instructions
+            logger.info("🤖 Using custom system instructions for Google LLM", 
+                       model=self.model,
+                       instruction_type="custom",
+                       instruction_length=len(systemInstructions),
+                       instructions_preview=systemInstructions[:200] + "..." if len(systemInstructions) > 200 else systemInstructions)
         else:
             systemInstructions = self._get_default_system_instructions()
+            logger.info("🤖 Using default system instructions for Google LLM", 
+                       model=self.model,
+                       instruction_type="default",
+                       instruction_length=len(systemInstructions),
+                       instructions_preview=systemInstructions[:200] + "..." if len(systemInstructions) > 200 else systemInstructions)
+        
+        # Log the complete system instructions at DEBUG level for full visibility
+        logger.debug("📋 Complete system instructions for Google LLM", 
+                    model=self.model,
+                    full_instructions=systemInstructions)
         
         processor = GoogleLLMService(
             model=self.model,

@@ -149,6 +149,14 @@ class InterviewContext:
             if planner_field.sequence == self.current_workflow_step_sequence:
                 return planner_field
         
+        # If no match found, log warning for debugging
+        import structlog
+        logger = structlog.get_logger()
+        logger.warning("No planner field found for current sequence", 
+                      current_sequence=self.current_workflow_step_sequence,
+                      available_sequences=[pf.sequence for pf in self.planner_fields],
+                      mock_interview_id=self.mock_interview_id)
+        
         return None
     
     def get_next_planner_field(self) -> Optional[PlannerField]:
@@ -193,7 +201,8 @@ class InterviewContext:
             "started_at": self.started_at.isoformat(),
             "session_duration_seconds": self.get_session_duration(),
             "planner_fields_count": len(self.planner_fields),
-            "current_planner_field": current_planner.to_dict() if current_planner else None
+            "current_planner_field": current_planner.to_dict() if current_planner else None,
+            "planner_fields": [pf.to_dict() for pf in self.planner_fields]
         }
     
     def reset_context(self) -> None:

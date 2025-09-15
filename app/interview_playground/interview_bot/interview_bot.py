@@ -152,6 +152,7 @@ class InterviewBot:
         pipeline_components = [
             self.transport.input(),
             self.stt,
+            self.context_switch_processor,
             self.context_aggregator.user(),
             self.rtvi_processor
         ]
@@ -452,7 +453,10 @@ Please begin the interview following these specific instructions for this phase.
             event_data: Event-specific data
         """
         try:
-            self.logger.info(f"Timer event received: {event_type}", **event_data)
+            self.logger.info(f"🔔 Timer event received: {event_type}", 
+                           event_type=event_type, 
+                           event_data_keys=list(event_data.keys()) if event_data else [],
+                           **event_data)
             
             if event_type == "timer_started":
                 planner_field = event_data.get("planner_field")
