@@ -94,6 +94,15 @@ class InterviewTimerMonitor:
                     "duration_minutes": current_planner.duration
                 })
             
+            # Send SSE notification for phase start
+            await self._send_sse_notification("phase_started", {
+                "sequence": current_planner.sequence,
+                "question_id": current_planner.question_id,
+                "duration_minutes": current_planner.duration,
+                "instructions": current_planner.interview_instructions,
+                "timestamp": datetime.utcnow().isoformat()
+            })
+            
             return True
             
         except Exception as e:
@@ -362,6 +371,17 @@ class InterviewTimerMonitor:
                         "new_planner": next_planner,
                         "transition_count": self.transitions_completed
                     })
+                
+                # Send SSE notification for phase change
+                await self._send_sse_notification("phase_changed", {
+                    "new_sequence": next_planner.sequence,
+                    "previous_sequence": self.transitions_completed,
+                    "question_id": next_planner.question_id,
+                    "duration_minutes": next_planner.duration,
+                    "instructions": next_planner.interview_instructions,
+                    "transition_count": self.transitions_completed,
+                    "timestamp": datetime.utcnow().isoformat()
+                })
             else:
                 # No more planners - finalize interview
                 await self.finalize_interview()
@@ -393,7 +413,52 @@ class InterviewTimerMonitor:
                     "total_transitions": self.transitions_completed,
                     "session_duration_seconds": session_duration
                 })
+            
+            # Send SSE notification for interview completion
+            await self._send_sse_notification("interview_completed", {
+                "total_transitions": self.transitions_completed,
+                "session_duration_seconds": session_duration,
+                "session_duration_minutes": session_duration // 60,
+                "total_planner_fields": len(self.interview_context.planner_fields),
+                "timestamp": datetime.utcnow().isoformat()
+            })
                 
         except Exception as e:
             self.logger.error("Failed to finalize interview", error=str(e))
+    
+    async def _send_sse_notification(self, event_type: str, data: dict):
+        """Send SSE notification to connected clients."""
+        try:
+            # Get the interview bot instance through the callback
+            # This assumes the timer_callback has access to the bot instance
+            if hasattr(self, '_bot_instance_ref'):
+                bot_instance = self._bot_instance_ref()
+                if bot_instance and hasattr(bot_instance, 'sse_connections'):
+                    event_data = {
+                        'type': event_type,
+                        'data': data
+                    }
+                    
+                    # Send to all SSE connections
+                    for connection_queue in list(bot_instance.sse_connections):
+                        try:
+                            await connection_queue.put(event_data)
+                        except Exception as e:
+                            self.logger.warning("Failed to send SSE notification to connection", 
+                                              event_type=event_type, error=str(e))
+                            # Remove broken connection
+                            bot_instance.sse_connections.discard(connection_queue)
+                    
+                    self.logger.debug("Sent SSE notification", 
+                                    event_type=event_type, 
+                                    connections_count=len(bot_instance.sse_connections))
+                    
+        except Exception as e:
+            self.logger.error("Error sending SSE notification", 
+                            event_type=event_type, error=str(e))
+    
+    def set_bot_instance_reference(self, bot_instance_ref):
+        """Set a weak reference to the bot instance for SSE notifications."""
+        import weakref
+        self._bot_instance_ref = weakref.ref(bot_instance_ref)
 

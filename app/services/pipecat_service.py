@@ -379,6 +379,30 @@ class PipecatInterviewService:
             logger.error(f"Failed to get answer for room_id {room_id}: {e}")
             return {"error": str(e)}
 
+    def get_bot_instance(self, room_id: str):
+        """
+        Get the bot instance for a specific room.
+        
+        Args:
+            room_id: Room identifier
+            
+        Returns:
+            Bot instance or None if not found
+        """
+        try:
+            if room_id not in self.bot_instances:
+                return None
+            
+            bot_info = self.bot_instances[room_id]
+            if bot_info.get("status") == "running" and "bot" in bot_info:
+                return bot_info["bot"]
+            
+            return None
+            
+        except Exception as e:
+            logger.error(f"Failed to get bot instance for room_id {room_id}: {e}")
+            return None
+
     def get_bot_status(self, room_id: str) -> Dict[str, Any]:
         """
         Get detailed status of the interview bot for a specific room.

@@ -534,3 +534,69 @@ async def get_timer_status(room_id: str):
     except Exception as e:
         logger.error("Failed to get timer status", room_id=room_id, error=str(e))
         raise HTTPException(status_code=500, detail=f"Failed to get timer status: {e}")
+
+
+@router.get("/interview/{room_id}/events")
+async def interview_events_stream(room_id: str):
+    """Server-Sent Events stream for interview phase changes and updates."""
+    from fastapi.responses import StreamingResponse
+    import asyncio
+    import json
+    
+    async def event_generator():
+        """Generate SSE events for interview updates."""
+        try:
+            # Check if interview bot exists
+            bot_instance = pipecat_service.get_bot_instance(room_id)
+            if not bot_instance:
+                yield f"event: error\ndata: {json.dumps({'message': 'Interview bot not found'})}\n\n"
+                return
+            
+            # Send initial connection event
+            yield f"event: connected\ndata: {json.dumps({'room_id': room_id, 'timestamp': datetime.utcnow().isoformat()})}\n\n"
+            
+            # Register this SSE connection with the bot
+            if not hasattr(bot_instance, 'sse_connections'):
+                bot_instance.sse_connections = set()
+            
+            # Create a queue for this SSE connection
+            event_queue = asyncio.Queue()
+            bot_instance.sse_connections.add(event_queue)
+            
+            try:
+                # Send periodic heartbeat and listen for events
+                while True:
+                    try:
+                        # Wait for events with timeout for heartbeat
+                        event_data = await asyncio.wait_for(event_queue.get(), timeout=30.0)
+                        yield f"event: {event_data['type']}\ndata: {json.dumps(event_data['data'])}\n\n"
+                    except asyncio.TimeoutError:
+                        # Send heartbeat every 30 seconds
+                        heartbeat_data = {
+                            'timestamp': datetime.utcnow().isoformat(),
+                            'room_id': room_id
+                        }
+                        yield f"event: heartbeat\ndata: {json.dumps(heartbeat_data)}\n\n"
+                        
+            except asyncio.CancelledError:
+                logger.info("SSE connection cancelled", room_id=room_id)
+            finally:
+                # Clean up connection
+                if hasattr(bot_instance, 'sse_connections'):
+                    bot_instance.sse_connections.discard(event_queue)
+                    
+        except Exception as e:
+            logger.error("Error in SSE event generator", room_id=room_id, error=str(e))
+            error_data = {'message': f'Server error: {str(e)}'}
+            yield f"event: error\ndata: {json.dumps(error_data)}\n\n"
+    
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "Access-Control-Allow-Origin": "*",
+            "Access-Control-Allow-Headers": "Cache-Control"
+        }
+    )

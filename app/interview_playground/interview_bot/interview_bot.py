@@ -343,6 +343,9 @@ class InterviewBot:
                 timer_callback=self._on_timer_event
             )
             
+            # Set bot instance reference for SSE notifications
+            self.timer_monitor.set_bot_instance_reference(self)
+            
             self.logger.info("⏱️ Timer Monitor setup completed")
             
         except Exception as e:
