@@ -88,3 +88,12 @@ class InterviewDifficulty(str, Enum):
     EASY = "EASY"
     MEDIUM = "MEDIUM"
     HARD = "HARD"
+
+class ToolName(str, Enum):
+    BASE = "BASE"
+    CODE_EDITOR = "CODE_EDITOR"
+    DESIGN_EDITOR = "DESIGN_EDITOR"
+
+class EventType(str, Enum):
+    SYSTEM = "SYSTEM"
+    INTERVIEW = "INTERVIEW"

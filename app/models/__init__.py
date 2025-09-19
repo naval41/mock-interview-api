@@ -3,7 +3,7 @@ from .user import User, UserCreate, UserRead, UserUpdate
 from .enums import (
     OrderStatus, PaymentStatus, PaymentMethod, CandidateInterviewStatus,
     InterviewLevel, CodeLanguage, TranscriptSender, WorkflowStepType,
-    Recommendation, QuestionType, SessionStatus, InterviewDifficulty
+    Recommendation, QuestionType, SessionStatus, InterviewDifficulty, ToolName
 )
 from .service import Service, ServiceCreate, ServiceRead, ServiceUpdate
 from .mock_interview import MockInterview, MockInterviewCreate, MockInterviewRead, MockInterviewUpdate
@@ -57,7 +57,7 @@ __all__ = [
     # Enums
     "OrderStatus", "PaymentStatus", "PaymentMethod", "CandidateInterviewStatus",
     "InterviewLevel", "CodeLanguage", "TranscriptSender", "WorkflowStepType",
-    "Recommendation", "QuestionType", "SessionStatus", "InterviewDifficulty",
+    "Recommendation", "QuestionType", "SessionStatus", "InterviewDifficulty", "ToolName",
     
     # Service models
     "Service", "ServiceCreate", "ServiceRead", "ServiceUpdate",

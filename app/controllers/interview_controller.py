@@ -569,7 +569,39 @@ async def interview_events_stream(room_id: str):
                     try:
                         # Wait for events with timeout for heartbeat
                         event_data = await asyncio.wait_for(event_queue.get(), timeout=30.0)
-                        yield f"event: {event_data['type']}\ndata: {json.dumps(event_data['data'])}\n\n"
+                        
+                        # Log the received event data for debugging
+                        logger.debug("Received SSE event data", 
+                                   room_id=room_id, 
+                                   event_keys=list(event_data.keys()) if isinstance(event_data, dict) else "not_dict",
+                                   event_data_type=type(event_data).__name__)
+                        
+                        # Handle different event data formats
+                        if isinstance(event_data, dict):
+                            # Check for 'type' or 'event_type' field
+                            event_type = event_data.get('type') or event_data.get('event_type')
+                            event_payload = event_data.get('data', {})
+                            
+                            if event_type:
+                                yield f"event: {event_type}\ndata: {json.dumps(event_payload)}\n\n"
+                                logger.debug("Sent SSE event", 
+                                           room_id=room_id, 
+                                           event_type=event_type,
+                                           payload_size=len(json.dumps(event_payload)))
+                            else:
+                                logger.error("SSE event data missing type field", 
+                                           room_id=room_id, 
+                                           available_keys=list(event_data.keys()))
+                                # Send as generic event
+                                yield f"event: data\ndata: {json.dumps(event_data)}\n\n"
+                        else:
+                            logger.error("SSE event data is not a dictionary", 
+                                       room_id=room_id, 
+                                       event_data_type=type(event_data).__name__,
+                                       event_data=str(event_data))
+                            # Send as string event
+                            yield f"event: raw\ndata: {json.dumps({'raw_data': str(event_data)})}\n\n"
+                            
                     except asyncio.TimeoutError:
                         # Send heartbeat every 30 seconds
                         heartbeat_data = {

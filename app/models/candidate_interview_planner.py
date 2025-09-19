@@ -1,7 +1,8 @@
 from sqlmodel import SQLModel, Field, Relationship
-from typing import Optional
+from typing import Optional, List
 from datetime import datetime
 import uuid
+from .enums import ToolName
 
 
 class CandidateInterviewPlannerBase(SQLModel):
@@ -13,6 +14,7 @@ class CandidateInterviewPlannerBase(SQLModel):
     interviewInstructions: Optional[str] = None
     sequence: int = Field(description="Order/sequence of this planner in the interview workflow")
     duration: int = Field(description="Duration in minutes for this planner step")
+    toolName: Optional[str] = Field(None, alias="tool_name", description="Comma-separated list of tools required for this planner step")
 
 
 class CandidateInterviewPlanner(CandidateInterviewPlannerBase, table=True):
@@ -47,9 +49,11 @@ class CandidateInterviewPlannerRead(CandidateInterviewPlannerBase):
     updatedAt: datetime
     sequence: int
     duration: int
+    toolName: Optional[str] = Field(None, alias="tool_name")
 
 
 class CandidateInterviewPlannerUpdate(SQLModel):
     interviewInstructions: Optional[str] = None
     sequence: Optional[int] = Field(None, description="Order/sequence of this planner in the interview workflow")
     duration: Optional[int] = Field(None, description="Duration in minutes for this planner step")
+    toolName: Optional[str] = Field(None, alias="tool_name", description="Comma-separated list of tools required for this planner step")

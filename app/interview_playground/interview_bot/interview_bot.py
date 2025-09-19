@@ -6,6 +6,7 @@ import asyncio
 import os
 from typing import Optional, Any, Dict
 from loguru import logger
+from pipecat.audio.vad.vad_analyzer import VADParams
 from app.core.config import settings
 
 from pipecat.audio.vad.silero import SileroVADAnalyzer
@@ -176,7 +177,14 @@ class InterviewBot:
             # Try to setup VAD, but make it optional
             vad_analyzer = None
             try:
-                vad_analyzer = SileroVADAnalyzer()
+                vad_analyzer = SileroVADAnalyzer(
+                    params=VADParams(
+                        confidence=0.7,      # Minimum confidence for voice detection
+                        start_secs=0.2,      # Time to wait before confirming speech start
+                        stop_secs=0.8,       # Time to wait before confirming speech stop
+                        min_volume=0.6,      # Minimum volume threshold
+                    )
+                )
                 self.logger.info("🎤 Silero VAD analyzer setup completed")
             except ImportError as e:
                 self.logger.warning(f"Silero VAD not available: {e}. Continuing without VAD.")

@@ -4,8 +4,10 @@ InterviewTimerMonitor for managing interview phase timers and coordinating with 
 
 import asyncio
 from datetime import datetime, timedelta
-from typing import Optional, Callable
+from typing import Optional, Callable, List
 from app.entities.interview_context import InterviewContext, PlannerField
+from app.entities.task_event import TaskEvent, TaskProperties
+from app.models.enums import EventType, WorkflowStepType, ToolName
 import structlog
 
 logger = structlog.get_logger()
@@ -95,13 +97,9 @@ class InterviewTimerMonitor:
                 })
             
             # Send SSE notification for phase start
-            await self._send_sse_notification("phase_started", {
-                "sequence": current_planner.sequence,
-                "question_id": current_planner.question_id,
-                "duration_minutes": current_planner.duration,
-                "instructions": current_planner.interview_instructions,
-                "timestamp": datetime.utcnow().isoformat()
-            })
+            task_event = self._create_task_event_from_planner(current_planner, "phase_started")
+
+            await self._send_sse_notification(EventType.INTERVIEW, task_event)
             
             return True
             
@@ -373,15 +371,9 @@ class InterviewTimerMonitor:
                     })
                 
                 # Send SSE notification for phase change
-                await self._send_sse_notification("phase_changed", {
-                    "new_sequence": next_planner.sequence,
-                    "previous_sequence": self.transitions_completed,
-                    "question_id": next_planner.question_id,
-                    "duration_minutes": next_planner.duration,
-                    "instructions": next_planner.interview_instructions,
-                    "transition_count": self.transitions_completed,
-                    "timestamp": datetime.utcnow().isoformat()
-                })
+                task_event = self._create_task_event_from_planner(next_planner, "phase_changed")
+  
+                await self._send_sse_notification(EventType.INTERVIEW, task_event)
             else:
                 # No more planners - finalize interview
                 await self.finalize_interview()
@@ -415,28 +407,66 @@ class InterviewTimerMonitor:
                 })
             
             # Send SSE notification for interview completion
-            await self._send_sse_notification("interview_completed", {
-                "total_transitions": self.transitions_completed,
-                "session_duration_seconds": session_duration,
-                "session_duration_minutes": session_duration // 60,
-                "total_planner_fields": len(self.interview_context.planner_fields),
-                "timestamp": datetime.utcnow().isoformat()
-            })
+            # For system events like interview completion, create a minimal TaskEvent
+            completion_task_event = TaskEvent(
+                task_type=WorkflowStepType.WRAP_UP,
+                tool_name=[],
+                task_definition="Interview completed",
+                task_properties=TaskProperties()
+            )
+
+            await self._send_sse_notification(EventType.SYSTEM, completion_task_event)
                 
         except Exception as e:
             self.logger.error("Failed to finalize interview", error=str(e))
     
-    async def _send_sse_notification(self, event_type: str, data: dict):
-        """Send SSE notification to connected clients."""
+    def _infer_workflow_step_type_from_tools(self, tool_names: List[ToolName]) -> WorkflowStepType:
+        """Infer WorkflowStepType based on the tools required."""
+        if not tool_names:
+            return WorkflowStepType.BEHAVIORAL
+        
+        # Check for specific tool combinations
+        tool_values = [tool.value for tool in tool_names]
+        
+        if ToolName.CODE_EDITOR.value in tool_values:
+            return WorkflowStepType.CODING
+        elif ToolName.DESIGN_EDITOR.value in tool_values:
+            return WorkflowStepType.SYSTEM_DESIGN
+        else:
+            return WorkflowStepType.BEHAVIORAL
+
+    def _create_task_event_from_planner(self, planner_field: PlannerField, event_name: str) -> TaskEvent:
+        """Create a TaskEvent from a planner field for SSE notifications."""
+        # Infer WorkflowStepType from the tools required
+        task_type = self._infer_workflow_step_type_from_tools(planner_field.tool_name or [])
+        
+        # Create task properties with question ID
+        task_properties = TaskProperties(question_id=planner_field.question_id)
+        
+        # Create TaskEvent
+        task_event = TaskEvent(
+            task_type=task_type,
+            tool_name=planner_field.tool_name or [],
+            task_definition=planner_field.question_text,
+            task_properties=task_properties
+        )
+        
+        return task_event
+
+    async def _send_sse_notification(self, event_type: EventType, task_event: TaskEvent):
+        """Send SSE notification to connected clients using TaskEvent entity."""
         try:
             # Get the interview bot instance through the callback
             # This assumes the timer_callback has access to the bot instance
             if hasattr(self, '_bot_instance_ref'):
                 bot_instance = self._bot_instance_ref()
                 if bot_instance and hasattr(bot_instance, 'sse_connections'):
+                    # Convert TaskEvent to dictionary and merge with additional data
+                    task_data = task_event.to_dict()
+                    
                     event_data = {
-                        'type': event_type,
-                        'data': data
+                        'event_type': event_type.value,
+                        'data': task_data
                     }
                     
                     # Send to all SSE connections
@@ -445,17 +475,17 @@ class InterviewTimerMonitor:
                             await connection_queue.put(event_data)
                         except Exception as e:
                             self.logger.warning("Failed to send SSE notification to connection", 
-                                              event_type=event_type, error=str(e))
+                                              event_type=event_type.value, error=str(e))
                             # Remove broken connection
                             bot_instance.sse_connections.discard(connection_queue)
                     
                     self.logger.debug("Sent SSE notification", 
-                                    event_type=event_type, 
+                                    event_type=event_type.value,
                                     connections_count=len(bot_instance.sse_connections))
                     
         except Exception as e:
             self.logger.error("Error sending SSE notification", 
-                            event_type=event_type, error=str(e))
+                            event_type=event_type.value, error=str(e))
     
     def set_bot_instance_reference(self, bot_instance_ref):
         """Set a weak reference to the bot instance for SSE notifications."""

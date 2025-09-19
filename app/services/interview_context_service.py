@@ -6,10 +6,12 @@ This service handles the creation of InterviewContext entities from database dat
 from typing import Optional
 from datetime import time
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select
 from app.core.database import get_db_session
 from app.dao.candidate_interview_dao import candidate_interview_dao
 from app.dao.candidate_interview_planner_dao import candidate_interview_planner_dao
 from app.entities.interview_context import InterviewContext, PlannerField
+from app.models.interview_question import InterviewQuestion
 import structlog
 import uuid
 
@@ -63,7 +65,11 @@ class InterviewContextService:
             if not interview_planners:
                 raise ValueError(f"No interview planners found for candidate interview: {candidate_interview.id}")
             
-            # Step 3: Create planner fields from planners (using duration directly from planner)
+            # Step 3: Fetch interview questions for all question IDs
+            question_ids = [planner.questionId for planner in interview_planners]
+            interview_questions = await self._fetch_interview_questions(db, question_ids)
+            
+            # Step 4: Create planner fields from planners (using duration directly from planner)
             planner_fields = []
             for planner in interview_planners:
                 planner_field = PlannerField(
@@ -74,9 +80,17 @@ class InterviewContextService:
                     sequence=planner.sequence
                     # start_time and end_time will be set separately when needed
                 )
+                # Set tool names directly from database toolName field
+                planner_field.set_tools_from_string(planner.toolName)
+                
+                # Set question text from fetched interview questions
+                if planner.questionId in interview_questions:
+                    question = interview_questions[planner.questionId]
+                    planner_field.set_question_text(question.question)
+                    
                 planner_fields.append(planner_field)
             
-            # Step 4: Build the InterviewContext with planner fields
+            # Step 5: Build the InterviewContext with planner fields
             first_planner = interview_planners[0]  # First in sequence
             
             # Start with the actual sequence of the first planner (might be 1, not 0)
@@ -172,6 +186,50 @@ class InterviewContextService:
         except Exception as e:
             logger.error("Error getting interview planners", 
                         candidate_interview_id=candidate_interview_id, 
+                        error=str(e))
+            raise
+    
+    async def _fetch_interview_questions(
+        self, 
+        db: AsyncSession, 
+        question_ids: list[str]
+    ) -> dict[str, InterviewQuestion]:
+        """
+        Fetch interview questions by their IDs.
+        
+        Args:
+            db: Database session
+            question_ids: List of question IDs to fetch
+            
+        Returns:
+            Dictionary with question_id as key and InterviewQuestion object as value
+        """
+        try:
+            if not question_ids:
+                return {}
+            
+            # Query interview questions by IDs
+            questions = []
+            for question_id in question_ids:
+                stmt = select(InterviewQuestion).where(InterviewQuestion.id == question_id)
+                result = await db.execute(stmt)
+                question = result.scalar_one_or_none()
+                if question:
+                    questions.append(question)
+            
+            # Convert to dictionary for easy lookup
+            questions_dict = {question.id: question for question in questions}
+            
+            logger.info("Fetched interview questions", 
+                       requested_count=len(question_ids),
+                       found_count=len(questions_dict),
+                       question_ids=question_ids)
+            
+            return questions_dict
+            
+        except Exception as e:
+            logger.error("Error fetching interview questions", 
+                        question_ids=question_ids, 
                         error=str(e))
             raise
     
