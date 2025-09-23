@@ -114,6 +114,7 @@ class QuestionAnswersBase(SQLModel):
     questionId: str = Field(index=True)
     answerSequence: int
     language: CodeLanguage
+    version: Optional[int] = None
 
 
 class QuestionAnswers(QuestionAnswersBase, table=True):
@@ -126,6 +127,7 @@ class QuestionAnswers(QuestionAnswersBase, table=True):
     
     # Relationships
     question: "InterviewQuestion" = Relationship(back_populates="answers")
+    candidateInterviewPlanners: Optional[List["CandidateInterviewPlanner"]] = Relationship(back_populates="questionAnswer")
 
 
 class QuestionAnswersCreate(QuestionAnswersBase):
@@ -139,6 +141,7 @@ class QuestionAnswersRead(QuestionAnswersBase):
 class QuestionAnswersUpdate(SQLModel):
     answerSequence: Optional[int] = None
     language: Optional[CodeLanguage] = None
+    version: Optional[int] = None
 
 
 class QuestionKnowledgeBankMapBase(SQLModel):

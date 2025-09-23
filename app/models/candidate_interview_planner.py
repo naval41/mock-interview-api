@@ -15,6 +15,7 @@ class CandidateInterviewPlannerBase(SQLModel):
     sequence: int = Field(description="Order/sequence of this planner in the interview workflow")
     duration: int = Field(description="Duration in minutes for this planner step")
     toolName: Optional[str] = Field(None, alias="tool_name", description="Comma-separated list of tools required for this planner step")
+    answerId: Optional[str] = None
 
 
 class CandidateInterviewPlanner(CandidateInterviewPlannerBase, table=True):
@@ -30,6 +31,7 @@ class CandidateInterviewPlanner(CandidateInterviewPlannerBase, table=True):
     workflowStepId: str = Field(foreign_key="WorkflowStep.id")
     questionId: str = Field(foreign_key="InterviewQuestion.id")
     knowledgeBankId: str = Field(foreign_key="KnowledgeBank.id")
+    answerId: Optional[str] = Field(default=None, foreign_key="QuestionAnswers.id")
     
     # Relationships
     candidateInterview: "CandidateInterview" = Relationship(back_populates="planners")
@@ -37,6 +39,7 @@ class CandidateInterviewPlanner(CandidateInterviewPlannerBase, table=True):
     workflowStep: "WorkflowStep" = Relationship(back_populates="planners")
     interviewQuestion: "InterviewQuestion" = Relationship(back_populates="candidateInterviewPlanners")
     knowledgeBank: "KnowledgeBank" = Relationship(back_populates="candidateInterviewPlanners")
+    questionAnswer: Optional["QuestionAnswers"] = Relationship(back_populates="candidateInterviewPlanners")
 
 
 class CandidateInterviewPlannerCreate(CandidateInterviewPlannerBase):
@@ -50,6 +53,7 @@ class CandidateInterviewPlannerRead(CandidateInterviewPlannerBase):
     sequence: int
     duration: int
     toolName: Optional[str] = Field(None, alias="tool_name")
+    answerId: Optional[str] = None
 
 
 class CandidateInterviewPlannerUpdate(SQLModel):
@@ -57,3 +61,4 @@ class CandidateInterviewPlannerUpdate(SQLModel):
     sequence: Optional[int] = Field(None, description="Order/sequence of this planner in the interview workflow")
     duration: Optional[int] = Field(None, description="Duration in minutes for this planner step")
     toolName: Optional[str] = Field(None, alias="tool_name", description="Comma-separated list of tools required for this planner step")
+    answerId: Optional[str] = None
