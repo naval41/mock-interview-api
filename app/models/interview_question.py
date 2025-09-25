@@ -113,6 +113,7 @@ class QuestionHintsUpdate(SQLModel):
 class QuestionAnswersBase(SQLModel):
     questionId: str = Field(index=True)
     answerSequence: int
+    answerContent: Optional[str] = None
     language: CodeLanguage
     version: Optional[int] = None
 

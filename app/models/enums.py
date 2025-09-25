@@ -97,3 +97,8 @@ class ToolName(str, Enum):
 class EventType(str, Enum):
     SYSTEM = "SYSTEM"
     INTERVIEW = "INTERVIEW"
+
+
+class ToolEvent(str, Enum):
+    CODE_CONTENT = "CodeContent"
+    DESIGN_CONTENT = "DesignContent"

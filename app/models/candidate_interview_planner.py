@@ -13,8 +13,8 @@ class CandidateInterviewPlannerBase(SQLModel):
     knowledgeBankId: str = Field(index=True)
     interviewInstructions: Optional[str] = None
     sequence: int = Field(description="Order/sequence of this planner in the interview workflow")
-    duration: int = Field(description="Duration in minutes for this planner step")
-    toolName: Optional[str] = Field(None, alias="tool_name", description="Comma-separated list of tools required for this planner step")
+    duration: int = Field(default=0, description="Duration in minutes for this planner step")
+    toolName: Optional[str] = Field(None, description="Tool name for this planner step")
     answerId: Optional[str] = None
 
 

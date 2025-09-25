@@ -47,6 +47,9 @@ from .workflow_step_knowledge_bank import (
     WorkflowStep_KnowledgeBank, WorkflowStep_KnowledgeBankCreate, 
     WorkflowStep_KnowledgeBankRead, WorkflowStep_KnowledgeBankUpdate
 )
+from .question_solution import (
+    QuestionSolution, QuestionSolutionCreate, QuestionSolutionRead, QuestionSolutionUpdate
+)
 
 # Export all models
 __all__ = [
@@ -96,6 +99,9 @@ __all__ = [
     
     # Planning models
     "CandidateInterviewPlanner", "CandidateInterviewPlannerCreate", "CandidateInterviewPlannerRead", "CandidateInterviewPlannerUpdate",
+    
+    # Solution models
+    "QuestionSolution", "QuestionSolutionCreate", "QuestionSolutionRead", "QuestionSolutionUpdate",
     
     # Junction tables
     "WorkflowStep_KnowledgeBank", "WorkflowStep_KnowledgeBankCreate", "WorkflowStep_KnowledgeBankRead", "WorkflowStep_KnowledgeBankUpdate",
