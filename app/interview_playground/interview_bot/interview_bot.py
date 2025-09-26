@@ -153,15 +153,14 @@ class InterviewBot:
         pipeline_components = [
             self.transport.input(),
             self.stt,
-            self.context_switch_processor,
-            self.context_aggregator.user(),
-            self.rtvi_processor
-        ]
+            self.context_switch_processor, 
+            self.rtvi_processor]
 
         logger.info(f"Adding custom processor of length {len(self.custom_processors)}")
         pipeline_components.extend(self.custom_processors)
         
         pipeline_components.extend([
+            self.context_aggregator.user(),
             self.llm_service,
             self.tts,
             self.transport.output(),

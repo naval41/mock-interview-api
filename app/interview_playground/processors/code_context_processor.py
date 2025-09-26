@@ -2,7 +2,7 @@
 Code Context Processor implementation that extends BaseProcessor.
 """
 from typing import Optional
-from pipecat.frames.frames import Frame, InputTextRawFrame
+from pipecat.frames.frames import Frame, InputTextRawFrame, LLMMessagesAppendFrame, LLMMessagesUpdateFrame
 from pipecat.processors.frame_processor import FrameDirection
 from pipecat.processors.frameworks.rtvi import RTVIClientMessageFrame
 from app.interview_playground.processors.base_processor import BaseProcessor
@@ -108,7 +108,15 @@ class CodeContextProcessor(BaseProcessor):
                            is_first_submission=diff_result.is_first_submission,
                            has_diff=bool(diff_result.diff_content),
                            phase=phase)
-                await self.push_frame(InputTextRawFrame(text=llm_prompt), FrameDirection.DOWNSTREAM)
+
+                messages = [
+                    {
+                        "role": "user", 
+                        "content": llm_prompt
+                    }
+                ]
+                # Send the LLM prompt as InputTextRawFrame
+                await self.push_frame(LLMMessagesAppendFrame(messages=messages, run_llm=True), FrameDirection.DOWNSTREAM)
             else:
                 logger.debug("No changes detected, skipping LLM reference update", question_id=diff_result.question_id)
                     
@@ -135,7 +143,6 @@ class CodeContextProcessor(BaseProcessor):
 The candidate is working on their solution and has provided the following code for reference:
 
 **Programming Language:** {language.upper()}
-**Question ID:** {diff_result.question_id}
 
 **Current Code (In Progress):**
 ```{language}
@@ -153,6 +160,7 @@ The candidate is working on their solution and has provided the following code f
 - Take note of the direction they're heading
 - Only provide feedback or ask follow-up questions if the solution seems nearly complete or if there are critical issues that need immediate attention
 - Allow the candidate to continue developing their solution naturally
+- Do not provide any feedback or ask follow-up questions unless the solution seems nearly complete or if there are critical issues that need immediate attention
 """
         else:
             # Code diff prompt - progressive reference
@@ -187,6 +195,8 @@ The candidate is in an active update phase and has made incremental changes to t
   * Continue observing the iterative development process
   * Allow natural progression of their thought process
   * Only intervene if critical issues might derail their progress
+  * Do not provide any feedback or ask follow-up questions unless the solution seems nearly complete or if there are critical issues that need immediate attention
+
 
 **Decision Point:** Based on the incremental changes and overall solution maturity, determine if this warrants active engagement or continued observation of the development process.
 """
