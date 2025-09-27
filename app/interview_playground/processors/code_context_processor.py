@@ -101,7 +101,7 @@ class CodeContextProcessor(BaseProcessor):
             
             # Send to LLM if there are changes or it's a first submission
             if diff_result.has_changes:
-                llm_prompt = self._build_llm_prompt(diff_result, content, language)
+                llm_prompt = self._build_llm_prompt(diff_result, language)
                 phase = "initial submission" if diff_result.is_first_submission else "update phase"
                 logger.info(f"Sending {phase} reference to LLM", 
                            question_id=diff_result.question_id,
@@ -123,82 +123,90 @@ class CodeContextProcessor(BaseProcessor):
         except Exception as e:
             logger.error("Error processing CodeContent event", error=str(e))
     
-    def _build_llm_prompt(self, diff_result: DiffResult, code_content: str, language: str) -> str:
+    def _build_llm_prompt(self, diff_result: DiffResult, language: str) -> str:
         """
-        Build LLM prompt based on whether it's a first submission or code diff.
+        Build LLM prompt with complete code content and optional diff information.
         
         Args:
-            diff_result: Result from diff processing
-            code_content: Current code content
+            diff_result: Result from diff processing (includes current_code)
             language: Programming language
             
         Returns:
             Formatted prompt for LLM
         """
         if diff_result.is_first_submission:
-            # First submission prompt - reference only
+            # First submission prompt - complete code for context but likely incomplete
             prompt = f"""
-📝 **CODE REFERENCE UPDATE**
+📝 **CODE REFERENCE UPDATE - INITIAL SUBMISSION**
 
-The candidate is working on their solution and has provided the following code for reference:
+The candidate has started working on their solution and provided their current progress for reference:
 
 **Programming Language:** {language.upper()}
+**Question ID:** {diff_result.question_id}
 
-**Current Code (In Progress):**
+**Current Code Progress (Full Context):**
 ```{language}
-{code_content}
+{diff_result.current_code}
 ```
 
 **Context:**
-- This is the candidate's initial code submission
-- The solution may be incomplete or in early stages
-- Use this as reference to understand their current approach
-- No immediate response required unless the solution appears substantially complete
+- This is the candidate's initial code submission - likely incomplete or in early development
+- The code above represents their current progress, not a final solution
+- This is provided for your reference to understand their approach and thinking
+- The solution may be partial, have placeholders, or be in early stages
 
 **Instructions:**
+- Candidate writes this code on the kind of white paper, so expect typos and other syntax related errors. Dont highlight those parts as those are expected.
 - Observe the candidate's problem-solving approach
 - Take note of the direction they're heading
 - Only provide feedback or ask follow-up questions if the solution seems nearly complete or if there are critical issues that need immediate attention
 - Allow the candidate to continue developing their solution naturally
 - Do not provide any feedback or ask follow-up questions unless the solution seems nearly complete or if there are critical issues that need immediate attention
+
+This message is only for you reference and you dont need to emit any response as part of that. 
 """
         else:
-            # Code diff prompt - progressive reference
+            # Code update prompt - incremental development with full context only
             prompt = f"""
-🔄 **CODE UPDATE PHASE**
+🔄 **CODE REFERENCE UPDATE - INCREMENTAL DEVELOPMENT**
 
-The candidate is in an active update phase and has made incremental changes to their solution.
+The candidate is actively developing their solution and has made incremental changes to their code.
 
 **Programming Language:** {language.upper()}
 **Question ID:** {diff_result.question_id}
 
-**Incremental Changes (Diff from Previous Version):**
-```diff
-{diff_result.diff_content}
+**Current Code State (Complete Code for Full Context):**
+```{language}
+{diff_result.current_code}
 ```
 
 **Context:**
-- This is an UPDATE PHASE - the candidate is iteratively refining their solution
-- The diff above shows ONLY the changes made from the previous version you observed
-- The candidate is actively developing and may make further changes
-- This represents their current problem-solving evolution step
+- This is INCREMENTAL DEVELOPMENT - the candidate is iteratively working on their solution
+- The complete code above represents their current progress, but the solution may still be incomplete
+- The candidate has made some changes since the last update and is actively developing
+- The candidate will likely make further changes as they continue working
+- This represents their current state in the ongoing problem-solving process
 
 **Instructions:**
-- This is incremental progress, not a final submission
+- Candidate writes this code on the kind of white paper, so expect typos and other syntax related errors. Dont highlight those parts as those are expected.
+- You have the complete current code for full context, but treat this as ONGOING INCREMENTAL DEVELOPMENT
+- This is incremental progress in an ongoing development process, not a final submission
 - Monitor how the solution is evolving with each update
-- Assess the direction and quality of changes being made
-- If the current state appears substantially complete:
-  * You may provide constructive feedback on the improvements
+- Assess the overall direction and approach the candidate is taking
+- Remember: The candidate is still actively developing - the solution may be incomplete
+- If the current state appears substantially complete or near completion:
+  * You may provide constructive feedback on the current progress
   * Consider asking thoughtful follow-up questions about their approach
   * Explore edge cases or optimizations if appropriate
-- If the solution is still evolving:
+- If the solution is still in active development (most likely):
   * Continue observing the iterative development process
-  * Allow natural progression of their thought process
+  * Allow natural progression of their problem-solving
   * Only intervene if critical issues might derail their progress
-  * Do not provide any feedback or ask follow-up questions unless the solution seems nearly complete or if there are critical issues that need immediate attention
+  * Do not provide feedback unless the solution seems nearly complete or has critical issues
 
+This message is only for you reference and you dont need to emit any response as part of that. 
 
-**Decision Point:** Based on the incremental changes and overall solution maturity, determine if this warrants active engagement or continued observation of the development process.
+**Decision Point:** Based on the current code state and overall solution progress, determine if this warrants active engagement or continued observation of the ongoing development process.
 """
         
         logger.info("Built LLM prompt", 
@@ -207,7 +215,7 @@ The candidate is in an active update phase and has made incremental changes to t
                    prompt_length=len(prompt))
         
         # Add solution completeness indicators
-        completeness_indicators = self._get_completeness_indicators(code_content, language)
+        completeness_indicators = self._get_completeness_indicators(diff_result.current_code, language)
         if completeness_indicators:
             prompt += f"""
 

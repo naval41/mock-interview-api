@@ -22,6 +22,7 @@ class DiffResult:
     diff_content: Optional[str]
     is_first_submission: bool
     question_id: str
+    current_code: str  # Always include the complete current code
     solution_id: Optional[str] = None
     timestamp: Optional[int] = None
 
@@ -128,6 +129,7 @@ class CodeDiffManager:
                         diff_content=None,
                         is_first_submission=False,
                         question_id=question_id,
+                        current_code=code_content,
                         solution_id=existing_solution.id if existing_solution else None,
                         timestamp=timestamp
                     )
@@ -158,6 +160,7 @@ class CodeDiffManager:
                     diff_content=None,  # No diff for first submission
                     is_first_submission=True,
                     question_id=question_id,
+                    current_code=code_content,
                     solution_id=new_solution.id,
                     timestamp=timestamp
                 )
@@ -177,6 +180,7 @@ class CodeDiffManager:
                         diff_content=None,
                         is_first_submission=False,
                         question_id=question_id,
+                        current_code=code_content,
                         solution_id=existing_solution.id,
                         timestamp=timestamp
                     )
@@ -203,6 +207,7 @@ class CodeDiffManager:
                     diff_content=diff_content,
                     is_first_submission=False,
                     question_id=question_id,
+                    current_code=code_content,
                     solution_id=updated_solution.id,
                     timestamp=timestamp
                 )
