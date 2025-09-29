@@ -2,6 +2,8 @@
 Code Context Processor implementation that extends BaseProcessor.
 """
 from typing import Optional
+import asyncio
+import time
 from pipecat.frames.frames import Frame, InputTextRawFrame, LLMMessagesAppendFrame, LLMMessagesUpdateFrame
 from pipecat.processors.frame_processor import FrameDirection
 from pipecat.processors.frameworks.rtvi import RTVIClientMessageFrame
@@ -16,13 +18,14 @@ logger = structlog.get_logger()
 class CodeContextProcessor(BaseProcessor):
     """Code Context Processor for handling code-related messages and context."""
     
-    def __init__(self, max_code_snippets: int = 10, language_detection: bool = True, question_id: Optional[str] = None):
+    def __init__(self, max_code_snippets: int = 10, language_detection: bool = True, question_id: Optional[str] = None, debounce_seconds: int = 30):
         """Initialize Code Context Processor.
         
         Args:
             max_code_snippets: Maximum number of code snippets to keep in context
             language_detection: Whether to automatically detect programming language
             question_id: Current question ID for code submissions
+            debounce_seconds: Seconds to wait before sending code to LLM (default: 30)
         """
         super().__init__(name="code_context_processor")
         self.max_code_snippets = max_code_snippets
@@ -30,6 +33,13 @@ class CodeContextProcessor(BaseProcessor):
         self.code_snippets = []
         self.language_context = {}
         self.question_id = question_id
+        self.debounce_seconds = debounce_seconds
+        
+        # Debounce mechanism
+        self.pending_code_submission = None
+        self.debounce_task = None
+        self.last_activity_time = 0
+        self.submission_count = 0
         
         # Initialize the code diff manager
         self.code_diff_manager = CodeDiffManager()
@@ -38,6 +48,70 @@ class CodeContextProcessor(BaseProcessor):
         """Set the current question ID for code submissions."""
         self.question_id = question_id
         logger.info("Question ID set", question_id=question_id)
+        
+    async def _debounced_llm_submission(self, diff_result: DiffResult, language: str):
+        """Handle debounced submission to LLM after inactivity period."""
+        try:
+            await asyncio.sleep(self.debounce_seconds)
+            
+            # Check if this is still the latest submission
+            if self.pending_code_submission and self.pending_code_submission['diff_result'] == diff_result:
+                self.submission_count += 1
+                
+                logger.info(f"🕒 Debounce period completed - sending code to LLM", 
+                           question_id=diff_result.question_id,
+                           submission_count=self.submission_count,
+                           debounce_seconds=self.debounce_seconds)
+                
+                # Build and send LLM prompt
+                llm_prompt = self._build_llm_prompt(diff_result, language)
+                
+                messages = [
+                    {
+                        "role": "user", 
+                        "content": llm_prompt
+                    }
+                ]
+                
+                await self.push_frame(LLMMessagesAppendFrame(messages=messages, run_llm=True), FrameDirection.DOWNSTREAM)
+                
+                # Clear pending submission
+                self.pending_code_submission = None
+                
+                logger.info("✅ Code successfully sent to LLM after debounce", 
+                           question_id=diff_result.question_id,
+                           submission_count=self.submission_count)
+            else:
+                logger.debug("Debounce submission cancelled - newer submission received")
+                
+        except asyncio.CancelledError:
+            logger.debug("Debounce task cancelled - newer submission received")
+        except Exception as e:
+            logger.error("Error in debounced LLM submission", error=str(e))
+            
+    def _schedule_debounced_submission(self, diff_result: DiffResult, language: str):
+        """Schedule or reschedule a debounced submission to LLM."""
+        current_time = time.time()
+        self.last_activity_time = current_time
+        
+        # Cancel existing debounce task if any
+        if self.debounce_task and not self.debounce_task.done():
+            self.debounce_task.cancel()
+            logger.debug("Cancelled previous debounce task - new code activity detected")
+        
+        # Store the latest submission data
+        self.pending_code_submission = {
+            'diff_result': diff_result,
+            'language': language,
+            'timestamp': current_time
+        }
+        
+        # Schedule new debounce task
+        self.debounce_task = asyncio.create_task(self._debounced_llm_submission(diff_result, language))
+        
+        logger.info(f"⏳ Code activity detected - scheduling LLM submission in {self.debounce_seconds}s", 
+                   question_id=diff_result.question_id,
+                   activity_time=current_time)
         
     # Remove the setup_processor method - it's no longer needed
     
@@ -99,26 +173,20 @@ class CodeContextProcessor(BaseProcessor):
             # Print diff results for now (as requested)
             await self._print_diff_results(diff_result)
             
-            # Send to LLM if there are changes or it's a first submission
+            # Handle debounced LLM submission if there are changes or it's a first submission
             if diff_result.has_changes:
-                llm_prompt = self._build_llm_prompt(diff_result, language)
-                phase = "initial submission" if diff_result.is_first_submission else "update phase"
-                logger.info(f"Sending {phase} reference to LLM", 
+                phase = "initial submission" if diff_result.is_first_submission else "incremental update"
+                logger.info(f"Code {phase} detected - using debounce mechanism", 
                            question_id=diff_result.question_id,
                            is_first_submission=diff_result.is_first_submission,
                            has_diff=bool(diff_result.diff_content),
-                           phase=phase)
-
-                messages = [
-                    {
-                        "role": "user", 
-                        "content": llm_prompt
-                    }
-                ]
-                # Send the LLM prompt as InputTextRawFrame
-                await self.push_frame(LLMMessagesAppendFrame(messages=messages, run_llm=True), FrameDirection.DOWNSTREAM)
+                           phase=phase,
+                           debounce_seconds=self.debounce_seconds)
+                
+                # Schedule debounced submission to LLM
+                self._schedule_debounced_submission(diff_result, language)
             else:
-                logger.debug("No changes detected, skipping LLM reference update", question_id=diff_result.question_id)
+                logger.debug("No changes detected, skipping debounce scheduling", question_id=diff_result.question_id)
                     
         except Exception as e:
             logger.error("Error processing CodeContent event", error=str(e))
@@ -135,78 +203,81 @@ class CodeContextProcessor(BaseProcessor):
             Formatted prompt for LLM
         """
         if diff_result.is_first_submission:
-            # First submission prompt - complete code for context but likely incomplete
+            # First submission prompt - initial code after debounce period
             prompt = f"""
-📝 **CODE REFERENCE UPDATE - INITIAL SUBMISSION**
+📝 **CANDIDATE CODE SUBMISSION - INITIAL SOLUTION**
 
-The candidate has started working on their solution and provided their current progress for reference:
+The candidate has been working on their solution and after a period of coding activity, here is their current progress:
 
 **Programming Language:** {language.upper()}
 **Question ID:** {diff_result.question_id}
+**Submission Count:** {self.submission_count}
 
-**Current Code Progress (Full Context):**
+**Current Solution State:**
 ```{language}
 {diff_result.current_code}
 ```
 
 **Context:**
-- This is the candidate's initial code submission - likely incomplete or in early development
-- The code above represents their current progress, not a final solution
-- This is provided for your reference to understand their approach and thinking
-- The solution may be partial, have placeholders, or be in early stages
+- This is the candidate's first code submission after {self.debounce_seconds} seconds of inactivity
+- The candidate has been actively coding and this represents their current progress
+- This solution may be incomplete, in development, or represent their initial approach
+- The code is captured after a natural pause in their coding activity
 
 **Instructions:**
-- Candidate writes this code on the kind of white paper, so expect typos and other syntax related errors. Dont highlight those parts as those are expected.
-- Observe the candidate's problem-solving approach
-- Take note of the direction they're heading
-- Only provide feedback or ask follow-up questions if the solution seems nearly complete or if there are critical issues that need immediate attention
-- Allow the candidate to continue developing their solution naturally
-- Do not provide any feedback or ask follow-up questions unless the solution seems nearly complete or if there are critical issues that need immediate attention
+- The candidate writes code in a whiteboard-like environment, so expect minor typos and syntax variations
+- This represents their current thinking and approach to the problem
+- Assess the overall direction and problem-solving strategy
+- Only provide feedback if the solution appears substantially complete or has critical issues
+- Allow natural development progression - this is likely an early-stage solution
+- Focus on their approach rather than minor syntax details
 
-This message is only for you reference and you dont need to emit any response as part of that. 
+**Response Guidelines:**
+- This is a reference update - respond only if meaningful feedback is warranted
+- Consider this an ongoing development process, not a final submission
 """
         else:
-            # Code update prompt - incremental development with full context only
+            # Incremental update prompt - code after additional activity and debounce
             prompt = f"""
-🔄 **CODE REFERENCE UPDATE - INCREMENTAL DEVELOPMENT**
+🔄 **CANDIDATE CODE SUBMISSION - INCREMENTAL UPDATE**
 
-The candidate is actively developing their solution and has made incremental changes to their code.
+The candidate has continued working on their solution with incremental changes and after a period of coding activity, here is their updated progress:
 
 **Programming Language:** {language.upper()}
 **Question ID:** {diff_result.question_id}
+**Submission Count:** {self.submission_count}
 
-**Current Code State (Complete Code for Full Context):**
+**Updated Solution State:**
 ```{language}
 {diff_result.current_code}
 ```
 
 **Context:**
-- This is INCREMENTAL DEVELOPMENT - the candidate is iteratively working on their solution
-- The complete code above represents their current progress, but the solution may still be incomplete
-- The candidate has made some changes since the last update and is actively developing
-- The candidate will likely make further changes as they continue working
-- This represents their current state in the ongoing problem-solving process
+- This is an incremental update after {self.debounce_seconds} seconds of inactivity following previous changes
+- The candidate has been actively refining and developing their solution
+- This represents their evolved thinking and approach since the last submission
+- The code is captured after another natural pause in their coding activity
+- The solution may be progressing toward completion or still in active development
 
 **Instructions:**
-- Candidate writes this code on the kind of white paper, so expect typos and other syntax related errors. Dont highlight those parts as those are expected.
-- You have the complete current code for full context, but treat this as ONGOING INCREMENTAL DEVELOPMENT
-- This is incremental progress in an ongoing development process, not a final submission
-- Monitor how the solution is evolving with each update
-- Assess the overall direction and approach the candidate is taking
-- Remember: The candidate is still actively developing - the solution may be incomplete
-- If the current state appears substantially complete or near completion:
-  * You may provide constructive feedback on the current progress
-  * Consider asking thoughtful follow-up questions about their approach
-  * Explore edge cases or optimizations if appropriate
-- If the solution is still in active development (most likely):
-  * Continue observing the iterative development process
-  * Allow natural progression of their problem-solving
-  * Only intervene if critical issues might derail their progress
-  * Do not provide feedback unless the solution seems nearly complete or has critical issues
+- The candidate writes code in a whiteboard-like environment, so expect minor typos and syntax variations
+- This shows the evolution of their problem-solving approach
+- Assess the progress made and overall direction of the solution
+- Look for signs of solution maturity and completeness
+- The candidate is iteratively building their solution through multiple coding sessions
 
-This message is only for you reference and you dont need to emit any response as part of that. 
+**Response Guidelines:**
+- If the solution appears substantially complete or nearly finished:
+  * Provide constructive feedback on the approach and implementation
+  * Ask thoughtful questions about their solution strategy
+  * Discuss edge cases, optimizations, or alternative approaches if appropriate
+- If the solution is still in active development:
+  * Observe the iterative progress being made
+  * Allow continued natural development
+  * Only intervene if there are critical issues that might derail progress
+- Consider this part of an ongoing development process with natural pauses for reflection
 
-**Decision Point:** Based on the current code state and overall solution progress, determine if this warrants active engagement or continued observation of the ongoing development process.
+**Decision Point:** Based on the solution's current state and apparent completeness, determine if this warrants active engagement or continued observation.
 """
         
         logger.info("Built LLM prompt", 

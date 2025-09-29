@@ -36,7 +36,8 @@ class ProcessorsService:
         if self.code_context:
             code_kwargs = {
                 "max_code_snippets": self.kwargs.get("max_code_snippets", 10),
-                "language_detection": self.kwargs.get("language_detection", True)
+                "language_detection": self.kwargs.get("language_detection", True),
+                "debounce_seconds": self.kwargs.get("debounce_seconds", 30)
             }
             code_context_processor = CodeContextProcessor(**code_kwargs)
             # Store the processor instance directly (it's now a FrameProcessor)
