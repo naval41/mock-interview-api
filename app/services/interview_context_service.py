@@ -101,6 +101,7 @@ class InterviewContextService:
                 user_id=user_id,
                 session_id=session_id,
                 interview_planner_id=first_planner.id,
+                candidate_interview_id=candidate_interview.id,  # Add the actual candidate interview ID
                 current_workflow_step_sequence=initial_sequence,  # Use actual first sequence
                 current_question_id=first_planner.questionId,
                 current_workflow_step_id=first_planner.workflowStepId,
@@ -109,6 +110,7 @@ class InterviewContextService:
             
             logger.info("Successfully built interview context", 
                        context_id=str(interview_context),
+                       candidate_interview_id=candidate_interview.id,
                        interview_planner_id=first_planner.id,
                        question_id=first_planner.questionId,
                        workflow_step_id=first_planner.workflowStepId,

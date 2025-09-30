@@ -26,6 +26,7 @@ from app.interview_playground.stt.stt_service import STTService
 from app.interview_playground.transport.transport_service import TransportService
 from app.interview_playground.tts.tts_service import TTSService
 from app.interview_playground.timer.interview_timer_monitor import InterviewTimerMonitor
+from app.interview_playground.transcript.transcript_service import TranscriptService
 
 
 class InterviewBot:
@@ -61,6 +62,10 @@ class InterviewBot:
         # Timer and context management components
         self.context_switch_processor = None
         self.timer_monitor = None
+        
+        # Transcript processing
+        self.transcript_service = TranscriptService()
+        self.transcript_processor = None
 
                 # Processors service for context processing
         self.processors_service = ProcessorsService(
@@ -106,6 +111,9 @@ class InterviewBot:
             
             # Initialize Timer Monitor
             await self._setup_timer_monitor()
+            
+            # Initialize Transcript Processor
+            await self._setup_transcript_processor()
             
             # Setup pipeline
             await self._setup_pipeline()
@@ -154,7 +162,8 @@ class InterviewBot:
             self.transport.input(),
             self.stt,
             self.context_switch_processor, 
-            self.rtvi_processor]
+            self.rtvi_processor,
+            self.transcript_processor.user()]
 
         logger.info(f"Adding custom processor of length {len(self.custom_processors)}")
         pipeline_components.extend(self.custom_processors)
@@ -164,6 +173,7 @@ class InterviewBot:
             self.llm_service,
             self.tts,
             self.transport.output(),
+            self.transcript_processor.assistant(),  # Place after transport.output() for assistant transcripts
             self.context_aggregator.assistant()
         ])
 
@@ -359,6 +369,17 @@ class InterviewBot:
             self.logger.error(f"Failed to setup Timer Monitor: {e}")
             raise
     
+    async def _setup_transcript_processor(self):
+        """Setup Transcript Processor for conversation transcription."""
+        try:
+            self.transcript_processor = self.transcript_service.setup_processor(self.interview_context)
+            self.logger.info("📝 Transcript Processor setup completed",
+                           session_id=self.interview_context.session_id if self.interview_context else "unknown")
+            
+        except Exception as e:
+            self.logger.error(f"Failed to setup Transcript Processor: {e}")
+            raise
+    
     async def _start_initial_interview_phase(self):
         """Start the initial interview phase with first planner field."""
         try:
@@ -539,6 +560,10 @@ Please begin the interview following these specific instructions for this phase.
             self.is_running = True
             self.logger.info(f"🚀 Starting interview bot for room_id: {self.room_id}")
             
+            # Publish session started event
+            if self.transcript_processor:
+                await self.transcript_processor.publish_session_started()
+            
             # Start the pipeline
             await self.runner.run(self.task)
             
@@ -552,6 +577,10 @@ Please begin the interview following these specific instructions for this phase.
     async def stop(self):
         """Stop the interview bot."""
         try:
+            # Publish session ended event
+            if self.transcript_processor:
+                await self.transcript_processor.publish_session_ended()
+            
             # Stop timer monitor first
             if self.timer_monitor:
                 await self.timer_monitor.stop_current_timer()

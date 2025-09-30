@@ -1,4 +1,5 @@
 from sqlmodel import SQLModel, Field, Relationship
+from sqlalchemy import Column, Enum as SQLEnum
 from typing import Optional
 from datetime import datetime
 import uuid
@@ -7,11 +8,34 @@ from .enums import TranscriptSender, CodeLanguage
 
 class TranscriptBase(SQLModel):
     candidateInterviewId: str = Field(index=True)
-    sender: TranscriptSender
+    sender: TranscriptSender = Field(
+        sa_column=Column(
+            "sender", 
+            SQLEnum(
+                *[sender.value for sender in TranscriptSender],
+                name="TranscriptSender",
+                create_constraint=False,  # Don't create constraint, assume it exists
+                validate_strings=True
+            ),
+            nullable=False
+        )
+    )
     message: str
     timestamp: datetime
     isCode: bool = Field(default=False)
-    codeLanguage: Optional[CodeLanguage] = None
+    codeLanguage: Optional[CodeLanguage] = Field(
+        default=None,
+        sa_column=Column(
+            "codeLanguage", 
+            SQLEnum(
+                *[lang.value for lang in CodeLanguage],
+                name="CodeLanguage",
+                create_constraint=False,  # Don't create constraint, assume it exists
+                validate_strings=True
+            ),
+            nullable=True
+        )
+    )
 
 
 class Transcript(TranscriptBase, table=True):

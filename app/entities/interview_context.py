@@ -182,7 +182,7 @@ class InterviewContext:
     Entity representing the context of an ongoing interview session.
     
     This entity tracks:
-    - Interview identification (mock_interview_id, user_id, session_id, interview_planner_id)
+    - Interview identification (mock_interview_id, candidate_interview_id, user_id, session_id, interview_planner_id)
     - Current workflow step sequence
     - Session timing (started_at)
     - Current question and workflow step
@@ -193,6 +193,7 @@ class InterviewContext:
     user_id: str
     session_id: str
     interview_planner_id: str
+    candidate_interview_id: Optional[str] = None  # ID from CandidateInterview table for transcript storage
     
     # Current workflow step sequence
     current_workflow_step_sequence: int = 0  # Default starting sequence
@@ -459,6 +460,7 @@ class InterviewContext:
     def __str__(self) -> str:
         """String representation of the InterviewContext"""
         return (f"InterviewContext(mock_interview_id='{self.mock_interview_id}', "
+                f"candidate_interview_id='{self.candidate_interview_id}', "
                 f"user_id='{self.user_id}', session_id='{self.session_id}', "
                 f"interview_planner_id='{self.interview_planner_id}', "
                 f"sequence={self.current_workflow_step_sequence}, "
@@ -467,6 +469,7 @@ class InterviewContext:
     def __repr__(self) -> str:
         """Detailed representation of the InterviewContext"""
         return (f"InterviewContext(mock_interview_id='{self.mock_interview_id}', "
+                f"candidate_interview_id='{self.candidate_interview_id}', "
                 f"user_id='{self.user_id}', session_id='{self.session_id}', "
                 f"interview_planner_id='{self.interview_planner_id}', "
                 f"current_workflow_step_sequence={self.current_workflow_step_sequence}, "
