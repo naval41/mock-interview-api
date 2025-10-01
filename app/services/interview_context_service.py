@@ -23,7 +23,7 @@ class InterviewContextService:
     
     async def build_interview_context(
         self, 
-        mock_interview_id: str, 
+        candidate_interview_id: str, 
         user_id: str, 
         session_id: Optional[str] = None
     ) -> InterviewContext:
@@ -31,7 +31,7 @@ class InterviewContextService:
         Build an InterviewContext object from mock_interview_id and user_id.
         
         Args:
-            mock_interview_id: The mock interview identifier
+            candidate_interview_id: The candidate interview identifier
             user_id: The user identifier
             session_id: Optional session ID (will generate if not provided)
             
@@ -48,13 +48,13 @@ class InterviewContextService:
                 session_id = str(uuid.uuid4())
             
             logger.info("Building interview context", 
-                       mock_interview_id=mock_interview_id, 
+                       candidate_interview_id=candidate_interview_id, 
                        user_id=user_id, 
                        session_id=session_id)
             
             # Step 1: Find the candidate interview by mock_interview_id and user_id
             candidate_interview = await self._find_candidate_interview(
-                db, mock_interview_id, user_id
+                db, candidate_interview_id, user_id
             )
             
             # Step 2: Get all interview planners ordered by sequence
@@ -97,7 +97,7 @@ class InterviewContextService:
             initial_sequence = first_planner.sequence
             
             interview_context = InterviewContext(
-                mock_interview_id=mock_interview_id,
+                mock_interview_id=candidate_interview_id,
                 user_id=user_id,
                 session_id=session_id,
                 interview_planner_id=first_planner.id,
@@ -123,7 +123,7 @@ class InterviewContextService:
             
         except Exception as e:
             logger.error("Failed to build interview context", 
-                        mock_interview_id=mock_interview_id, 
+                        candidate_interview_id=candidate_interview_id, 
                         user_id=user_id, 
                         error=str(e))
             raise

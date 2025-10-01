@@ -547,7 +547,28 @@ Please begin the interview following these specific instructions for this phase.
         async def on_client_disconnected(transport, client):
             self.logger.info("Pipecat Client disconnected")
             self.logger.info(f"Final Context Details : {self.context_aggregator}")
-            await self.task.cancel()
+            
+            # Cleanup without closing transport again (already disconnected)
+            try:
+                # Stop timer monitor
+                if self.timer_monitor:
+                    await self.timer_monitor.stop_current_timer()
+                    self.logger.info("Timer monitor stopped")
+                
+                # Publish session ended event
+                if self.transcript_processor:
+                    await self.transcript_processor.publish_session_ended()
+                
+                # Cancel the pipeline task (PipelineRunner doesn't have stop method)
+                if self.task:
+                    await self.task.cancel()
+                    self.logger.info("Pipeline task cancelled")
+                
+                self.is_running = False
+                self.logger.info("Cleanup completed on disconnect")
+                
+            except Exception as e:
+                self.logger.error(f"Error during disconnect cleanup: {e}")
         
         self.logger.info("🎭 Event handlers setup completed")
     
@@ -586,8 +607,10 @@ Please begin the interview following these specific instructions for this phase.
                 await self.timer_monitor.stop_current_timer()
                 self.logger.info("Timer monitor stopped")
             
-            if self.runner:
-                await self.runner.stop()
+            # Cancel the pipeline task (PipelineRunner doesn't have stop method)
+            if self.task:
+                await self.task.cancel()
+                self.logger.info("Pipeline task cancelled")
             
             if self.transport:
                 await self.transport.close()

@@ -18,9 +18,9 @@ class QuestionSolution(QuestionSolutionBase, table=True):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()), primary_key=True)
     
     # Explicitly define the enum column to match the existing database enum type
-    type: CodeLanguage = Field(
+    language: CodeLanguage = Field(
         sa_column=Column(
-            "type", 
+            "language", 
             SQLEnum(
                 *[lang.value for lang in CodeLanguage],
                 name="CodeLanguage",
@@ -31,20 +31,24 @@ class QuestionSolution(QuestionSolutionBase, table=True):
         )
     )
     
+    # Timestamp fields
+    createdAt: datetime = Field(default_factory=datetime.utcnow, nullable=False)
+    updatedAt: datetime = Field(default_factory=datetime.utcnow, nullable=False)
+    
     # Relationships
     question: "InterviewQuestion" = Relationship()
     candidateInterview: "CandidateInterview" = Relationship()
 
 
 class QuestionSolutionCreate(QuestionSolutionBase):
-    type: CodeLanguage = Field(description="Programming language of the solution")
+    language: CodeLanguage = Field(description="Programming language of the solution")
 
 
 class QuestionSolutionRead(QuestionSolutionBase):
     id: str
-    type: CodeLanguage
+    language: CodeLanguage
 
 
 class QuestionSolutionUpdate(SQLModel):
     answer: Optional[str] = None
-    type: Optional[CodeLanguage] = None
+    language: Optional[CodeLanguage] = None

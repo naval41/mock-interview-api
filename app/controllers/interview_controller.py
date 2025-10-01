@@ -112,7 +112,7 @@ async def handle_webrtc_offer(
             try:
                 # Create interview context from mock_interview_id and user_id
                 interview_context = await interview_context_service.build_interview_context(
-                    mock_interview_id=mock_interview_id,
+                    candidate_interview_id=mock_interview_id,
                     user_id=user_id,
                     session_id=room_id  # Use room_id as session_id
                 )

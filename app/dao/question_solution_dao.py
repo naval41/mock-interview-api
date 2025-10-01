@@ -89,7 +89,7 @@ class QuestionSolutionDAO(BaseDAO[QuestionSolution]):
                 language_enum = CodeLanguage(language) if isinstance(language, str) else language
                 solution_data = {
                     "answer": answer_content,
-                    "type": language_enum
+                    "language": language_enum
                 }
                 updated_solution = await self.update(db, db_obj=existing_solution, obj_in=solution_data)
                 logger.info("Updated solution", 
@@ -103,7 +103,7 @@ class QuestionSolutionDAO(BaseDAO[QuestionSolution]):
                     "questionId": question_id,
                     "candidateInterviewId": candidate_interview_id,
                     "answer": answer_content,
-                    "type": language_enum
+                    "language": language_enum
                 }
                 
                 solution = await self.create(db, obj_in=solution_data)
