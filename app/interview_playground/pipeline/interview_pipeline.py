@@ -3,7 +3,9 @@ Simple interview pipeline implementation.
 """
 
 from typing import List, Any, Dict
-from loguru import logger
+import structlog
+
+logger = structlog.get_logger()
 
 
 class InterviewPipeline:

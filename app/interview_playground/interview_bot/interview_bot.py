@@ -5,10 +5,11 @@ Mock Interview Bot that coordinates all pipecat components for interview session
 import asyncio
 import os
 from typing import Optional, Any, Dict
-from loguru import logger
+import structlog
 from pipecat.audio.vad.vad_analyzer import VADParams
 from app.core.config import settings
 
+from pipecat.audio.interruptions.min_words_interruption_strategy import MinWordsInterruptionStrategy
 from pipecat.audio.vad.silero import SileroVADAnalyzer
 from pipecat.pipeline.pipeline import Pipeline
 from pipecat.pipeline.runner import PipelineRunner
@@ -38,7 +39,7 @@ class InterviewBot:
         self.interview_context = interview_context
         
         # Create a logger context for this session
-        self.logger = logger.bind(room_id=self.room_id)
+        self.logger = structlog.get_logger().bind(room_id=self.room_id)
         
         # Log interview context if provided
         if self.interview_context:
@@ -142,7 +143,8 @@ class InterviewBot:
             self.task = PipelineTask(
                 self.pipeline,
                 params=PipelineParams(
-                    allow_interruptions=True
+                    allow_interruptions=True,
+                    interruption_strategies=[MinWordsInterruptionStrategy(min_words=3)],
                 ),
                 observers=[RTVIObserver(self.rtvi_processor)],
             )
@@ -165,7 +167,7 @@ class InterviewBot:
             self.rtvi_processor,
             self.transcript_processor.user()]
 
-        logger.info(f"Adding custom processor of length {len(self.custom_processors)}")
+        self.logger.info(f"Adding custom processor of length {len(self.custom_processors)}")
         pipeline_components.extend(self.custom_processors)
         
         pipeline_components.extend([
