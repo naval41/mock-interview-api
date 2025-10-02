@@ -5,11 +5,14 @@ Mock Interview Bot that coordinates all pipecat components for interview session
 import asyncio
 import os
 from typing import Optional, Any, Dict
+from pipecat.processors.aggregators.llm_response import LLMUserAggregatorParams
 import structlog
 from pipecat.audio.vad.vad_analyzer import VADParams
 from app.core.config import settings
 
 from pipecat.audio.interruptions.min_words_interruption_strategy import MinWordsInterruptionStrategy
+from pipecat.audio.turn.smart_turn.base_smart_turn import SmartTurnParams
+from pipecat.audio.turn.smart_turn.local_smart_turn_v3 import LocalSmartTurnAnalyzerV3
 from pipecat.audio.vad.silero import SileroVADAnalyzer
 from pipecat.pipeline.pipeline import Pipeline
 from pipecat.pipeline.runner import PipelineRunner
@@ -192,7 +195,7 @@ class InterviewBot:
                     params=VADParams(
                         confidence=0.7,      # Minimum confidence for voice detection
                         start_secs=0.2,      # Time to wait before confirming speech start
-                        stop_secs=0.8,       # Time to wait before confirming speech stop
+                        stop_secs=0.2,       # Time to wait before confirming speech stop
                         min_volume=0.6,      # Minimum volume threshold
                     )
                 )
@@ -208,7 +211,8 @@ class InterviewBot:
                 video_out_is_live=False,
                 audio_in_enabled=True,
                 audio_out_enabled=True,
-                vad_analyzer=vad_analyzer,  # Can be None
+                vad_analyzer=vad_analyzer,
+                turn_analyzer=LocalSmartTurnAnalyzerV3(params=SmartTurnParams()),
             )
             
             transportService = TransportService(provider="webrtc", webrtc_connection=self.webrtc_connection, params=transport_params)
@@ -299,7 +303,9 @@ class InterviewBot:
                 }
             ])
             
-            self.context_aggregator = self.llm_service.create_context_aggregator(context)
+            self.context_aggregator = self.llm_service.create_context_aggregator(context, 
+            user_params=LLMUserAggregatorParams(enable_emulated_vad_interruptions=True))
+            
             self.logger.info("📚 Context aggregator setup completed")
                 
         except Exception as e:
