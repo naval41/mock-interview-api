@@ -342,13 +342,22 @@ class InterviewTimerMonitor:
     async def transition_to_next_planner(self):
         """Transition to the next planner field or finalize interview."""
         try:
-            # Move to next sequence
-            self.interview_context.move_to_next_sequence()
-            self.transitions_completed += 1
+            # Check if there's a next planner field available before incrementing sequence
+            current_sequence = self.interview_context.current_workflow_step_sequence
+            next_sequence = current_sequence + 1
             
-            next_planner = self.interview_context.get_current_planner_field()
+            # Check if next planner exists
+            next_planner = None
+            for planner_field in self.interview_context.planner_fields:
+                if planner_field.sequence == next_sequence:
+                    next_planner = planner_field
+                    break
             
             if next_planner:
+                # Move to next sequence only if next planner exists
+                self.interview_context.move_to_next_sequence()
+                self.transitions_completed += 1
+                
                 # Continue with next planner
                 self.logger.info("🔄 Transitioning to next planner", 
                                new_sequence=next_planner.sequence,
@@ -376,6 +385,9 @@ class InterviewTimerMonitor:
                 await self._send_sse_notification(EventType.INTERVIEW, task_event)
             else:
                 # No more planners - finalize interview
+                self.logger.info("🏁 No more planner fields available, finalizing interview", 
+                               current_sequence=current_sequence,
+                               total_planner_fields=len(self.interview_context.planner_fields))
                 await self.finalize_interview()
                 
         except Exception as e:

@@ -55,7 +55,7 @@ class TranscriptDAO(BaseDAO[Transcript]):
             
             transcript = await self.create(db, obj_in=transcript_data)
             
-            logger.info("Transcript created successfully",
+            logger.debug("Transcript created successfully",
                        transcript_id=transcript.id,
                        candidate_interview_id=candidate_interview_id,
                        sender=sender,
@@ -177,7 +177,7 @@ class TranscriptDAO(BaseDAO[Transcript]):
             for transcript in transcripts:
                 await self.delete(db, transcript.id)
             
-            logger.info("Deleted transcripts for interview",
+            logger.debug("Deleted transcripts for interview",
                        candidate_interview_id=candidate_interview_id,
                        deleted_count=count)
             

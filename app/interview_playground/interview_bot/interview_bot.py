@@ -26,6 +26,8 @@ from pipecat.transports.network.small_webrtc import SmallWebRTCTransport
 
 from app.interview_playground.processors.processors_service import ProcessorsService
 from app.interview_playground.processors.context_switch_processor import ContextSwitchProcessor
+from app.interview_playground.processors.interview_gate_processor import InterviewGateProcessor
+from app.interview_playground.processors.interview_closure_handler import InterviewClosureHandler
 from app.interview_playground.stt.stt_service import STTService
 from app.interview_playground.transport.transport_service import TransportService
 from app.interview_playground.tts.tts_service import TTSService
@@ -67,9 +69,17 @@ class InterviewBot:
         self.context_switch_processor = None
         self.timer_monitor = None
         
+        # Interview gate and closure handling components
+        self.interview_gate_processor = None
+        self.interview_closure_handler = None
+        
         # Transcript processing
         self.transcript_service = TranscriptService()
         self.transcript_processor = None
+        
+        # Interview state management
+        self.interview_phase = "initializing"
+        self._final_message_sent = False
 
                 # Processors service for context processing
         self.processors_service = ProcessorsService(
@@ -112,6 +122,12 @@ class InterviewBot:
             
             # Initialize Context Switch processor
             await self._setup_context_switch_processor()
+            
+            # Initialize Interview Gate processor
+            await self._setup_interview_gate_processor()
+            
+            # Initialize Interview Closure handler
+            await self._setup_interview_closure_handler()
             
             # Initialize Timer Monitor
             await self._setup_timer_monitor()
@@ -166,7 +182,8 @@ class InterviewBot:
         pipeline_components = [
             self.transport.input(),
             self.stt,
-            self.context_switch_processor, 
+            self.context_switch_processor,
+            self.interview_gate_processor,  # Add gate here
             self.rtvi_processor,
             self.transcript_processor.user()]
 
@@ -175,6 +192,7 @@ class InterviewBot:
         
         pipeline_components.extend([
             self.context_aggregator.user(),
+            self.interview_closure_handler,  # Add closure handler before LLM
             self.llm_service,
             self.tts,
             self.transport.output(),
@@ -354,6 +372,26 @@ class InterviewBot:
             self.logger.error(f"Failed to setup Context Switch processor: {e}")
             raise
     
+    async def _setup_interview_gate_processor(self):
+        """Setup Interview Gate Processor for frame filtering."""
+        try:
+            self.interview_gate_processor = InterviewGateProcessor()
+            self.logger.info("🚪 Interview Gate Processor setup completed")
+            
+        except Exception as e:
+            self.logger.error(f"Failed to setup Interview Gate Processor: {e}")
+            raise
+    
+    async def _setup_interview_closure_handler(self):
+        """Setup Interview Closure Handler for frame conversion."""
+        try:
+            self.interview_closure_handler = InterviewClosureHandler()
+            self.logger.info("🔄 Interview Closure Handler setup completed")
+            
+        except Exception as e:
+            self.logger.error(f"Failed to setup Interview Closure Handler: {e}")
+            raise
+    
     async def _setup_timer_monitor(self):
         """Setup Timer Monitor for managing interview phase timers."""
         try:
@@ -526,9 +564,31 @@ Please begin the interview following these specific instructions for this phase.
                 self.logger.info("Interview completed", 
                                total_phases=total_transitions + 1,
                                session_duration_minutes=session_duration // 60)
+                
+                # Activate the gate to block future frames
+                if self.interview_gate_processor:
+                    self.interview_gate_processor.mark_interview_completed()
+                    self.logger.info("🚪 Interview gate activated - blocking user/data frames")
+                
+                # Stop LLM from generating new responses after interview completion
+                await self._stop_llm_after_completion()
             
         except Exception as e:
             self.logger.error(f"Error handling timer event: {e}", event_type=event_type)
+    
+    async def _stop_llm_after_completion(self):
+        """Mark interview as completed and let context switch processor handle the final message."""
+        try:
+            self.logger.info("🛑 Interview completion processed", room_id=self.room_id)
+            
+            # Mark that the interview is completed
+            # The context switch processor will handle the final closing message
+            self._final_message_sent = True
+            
+            self.logger.info("✅ Interview marked as completed", room_id=self.room_id)
+            
+        except Exception as e:
+            self.logger.error(f"Failed to process interview completion: {e}", room_id=self.room_id)
     
     async def _setup_event_handlers(self):
         """Setup all event handlers."""
@@ -673,7 +733,9 @@ Please begin the interview following these specific instructions for this phase.
                 "rtvi_processor": self.rtvi_processor is not None,
                 "pipeline": self.pipeline is not None,
                 "context_switch_processor": self.context_switch_processor is not None,
-                "timer_monitor": self.timer_monitor is not None
+                "timer_monitor": self.timer_monitor is not None,
+                "interview_gate_processor": self.interview_gate_processor is not None,
+                "interview_closure_handler": self.interview_closure_handler is not None
             }
         }
         

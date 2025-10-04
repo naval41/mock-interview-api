@@ -43,6 +43,27 @@ def setup_logging():
     uvicorn_logger = logging.getLogger("uvicorn")
     uvicorn_logger.setLevel(getattr(logging, settings.log_level.upper()))
     
+    # Configure httpx logging level
+    httpx_logger = logging.getLogger("httpx")
+    httpx_logger.setLevel(logging.ERROR)  # Only show INFO and above (no DEBUG)
+
+        # Configure httpx logging level
+    httpx_logger = logging.getLogger("base_dao")
+    httpx_logger.setLevel(logging.ERROR)  # Only show INFO and above (no DEBUG)
+    
+    # Configure specific httpx sub-modules for cleaner logs
+    httpx_sub_loggers = [
+        "httpx._client",           # HTTP client core
+        "httpx._transports",       # Transport layer
+        "httpx._config",          # Configuration
+        "httpx._models",          # Request/Response models
+        "httpx._utils",           # Utilities
+    ]
+    
+    for logger_name in httpx_sub_loggers:
+        logger = logging.getLogger(logger_name)
+        logger.setLevel(logging.INFO)
+    
     # Disable verbose DEBUG logs from aiortc and other WebRTC libraries if configured
     if settings.disable_webrtc_debug:
         aiortc_logger = logging.getLogger("aiortc")
