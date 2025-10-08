@@ -43,6 +43,16 @@ class CodeContextProcessor(BaseProcessor):
         
         # Initialize the code diff manager
         self.code_diff_manager = CodeDiffManager()
+        # Remove the setup_processor method - it's no longer needed
+    
+    async def process_custom_frame(self, frame: Frame, direction: FrameDirection):
+        """Process frames after StartFrame validation."""
+        # Handle RTVI client messages for code and problem context
+        if isinstance(frame, RTVIClientMessageFrame) and frame.type == ToolEvent.CODE_CONTENT:
+            await self._handle_rtvi_message(frame)
+        else:
+            # Continue processing the frame
+            await self.push_frame(frame, direction)
     
     def set_question_id(self, question_id: str):
         """Set the current question ID for code submissions."""
@@ -112,17 +122,6 @@ class CodeContextProcessor(BaseProcessor):
         logger.info(f"⏳ Code activity detected - scheduling LLM submission in {self.debounce_seconds}s", 
                    question_id=diff_result.question_id,
                    activity_time=current_time)
-        
-    # Remove the setup_processor method - it's no longer needed
-    
-    async def process_custom_frame(self, frame: Frame, direction: FrameDirection):
-        """Process frames after StartFrame validation."""
-        # Handle RTVI client messages for code and problem context
-        if isinstance(frame, RTVIClientMessageFrame) and frame.type == ToolEvent.CODE_CONTENT:
-            await self._handle_rtvi_message(frame)
-        else:
-            # Continue processing the frame
-            await self.push_frame(frame, direction)
     
     async def _handle_rtvi_message(self, frame: RTVIClientMessageFrame):
         """Handle RTVI client messages, specifically CodeContent events."""

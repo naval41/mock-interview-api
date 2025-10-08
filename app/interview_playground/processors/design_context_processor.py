@@ -5,8 +5,13 @@ Design Context Processor implementation that extends BaseProcessor.
 from pipecat.processors.frame_processor import FrameProcessor
 from pipecat.frames.frames import Frame
 from pipecat.processors.frame_processor import FrameDirection
+from pipecat.processors.frameworks.rtvi import RTVIClientMessageFrame
 from app.interview_playground.processors.base_processor import BaseProcessor
+from app.interview_playground.utility_functions import parse_design_diagrams
+from app.models.enums import ToolEvent
+import structlog
 
+logger = structlog.get_logger()
 
 class DesignContextProcessor(BaseProcessor):
     """Design Context Processor for handling design-related messages and context."""
@@ -28,8 +33,50 @@ class DesignContextProcessor(BaseProcessor):
     
     async def process_custom_frame(self, frame: Frame, direction: FrameDirection):
         """Process frames after StartFrame validation."""
-        # Design context processing logic can be added here
-        await self.push_frame(frame, direction)
+        if isinstance(frame, RTVIClientMessageFrame) and frame.type == ToolEvent.DESIGN_CONTENT:
+            logger.info("RTVI Design frame Content", frame=frame)
+            self._process_design_content(frame)
+        else:
+            # Continue processing the frame
+            await self.push_frame(frame, direction)
+
+    
+    def _process_design_content(self, frame: RTVIClientMessageFrame):
+        """Process design content using the parse_design_diagrams utility."""
+        logger.info("Processing design content", frame=frame)
+        data = frame.data or {}
+        content = data.get("content", "")
+        logger.info("Design content", content=content)
+        
+        # Parse the design diagram using utility function
+        try:
+            parsed_result = parse_design_diagrams(content, validate=True)
+            
+            if parsed_result["is_valid"]:
+                logger.info("Design diagram parsed successfully",
+                           diagram_type=parsed_result["diagram_type"],
+                           element_count=parsed_result["element_count"])
+                
+                # Process the extracted elements
+                for element in parsed_result["elements"]:
+                    self._add_design_element(
+                        [element["name"]], 
+                        parsed_result["diagram_type"]
+                    )
+                
+                # Store parsed diagram info
+                self.design_context[frame.id if hasattr(frame, 'id') else 'unknown'] = {
+                    "diagram_type": parsed_result["diagram_type"],
+                    "element_count": parsed_result["element_count"],
+                    "elements": parsed_result["elements"]
+                }
+            else:
+                logger.warning("Design diagram validation failed",
+                             issues=parsed_result["issues"])
+                
+        except Exception as e:
+            logger.error("Failed to parse design diagram", error=str(e))
+        
         
     def _extract_design_elements(self, message: str) -> list:
         """Extract design elements from a message.

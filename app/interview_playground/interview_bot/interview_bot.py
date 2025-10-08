@@ -84,7 +84,7 @@ class InterviewBot:
                 # Processors service for context processing
         self.processors_service = ProcessorsService(
             code_context=True,  # CodeContextProcessor is enabled
-            design_context=False,
+            design_context=True,  # DesignContextProcessor is enabled
             max_code_snippets=10,
             max_design_elements=15
         )
