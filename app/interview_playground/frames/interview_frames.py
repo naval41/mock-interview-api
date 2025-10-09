@@ -18,3 +18,5 @@ class InterviewClosureFrame(SystemFrame):
     session_duration: int
     completion_reason: str = "timer_expired"
     final_message: bool = True
+
+

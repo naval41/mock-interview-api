@@ -47,6 +47,7 @@ class CodeLanguage(str, Enum):
     RUBY = "RUBY"
     PHP = "PHP"
     SQL = "SQL"
+    DESIGN = "DESIGN"
 
 
 class TranscriptSender(str, Enum):
