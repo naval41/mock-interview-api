@@ -257,7 +257,7 @@ class InterviewBot:
                 llm_service = LLMService(
                     provider="google", 
                     api_key=google_key, 
-                    model="gemini-2.0-flash-001",
+                    model="gemini-2.5-flash",
                     custom_instructions=initial_instructions
                 )
                 self.llm_service = llm_service.setup_processor()
