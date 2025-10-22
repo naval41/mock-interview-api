@@ -100,6 +100,12 @@ class EventType(str, Enum):
     INTERVIEW = "INTERVIEW"
 
 
+class CompletionReason(str, Enum):
+    TIMER_EXPIRED = "TIMER_EXPIRED"
+    MANUAL_DISCONNECT = "MANUAL_DISCONNECT"
+    SYSTEM_TERMINATED = "SYSTEM_TERMINATED"
+
+
 class ToolEvent(str, Enum):
     CODE_CONTENT = "CodeContent"
     DESIGN_CONTENT = "DesignContent"

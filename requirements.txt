@@ -43,3 +43,6 @@ deepgram-sdk>=4.7.0
 # deepgram-sdk
 # google-cloud-aiplatform
 # openai
+
+# AWS SDK for SQS messaging
+boto3>=1.35.0

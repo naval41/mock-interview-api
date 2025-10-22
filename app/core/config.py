@@ -20,6 +20,12 @@ class Settings(BaseSettings):
     deepgram_api_key: str = ""
     google_api_key: str = ""
     
+    # AWS SQS Configuration
+    aws_region: str = "ap-south-1"
+    aws_access_key_id: str = ""
+    aws_secret_access_key: str = ""
+    sqs_interview_completion_queue_url: str = ""
+    
     # Logging control
     disable_webrtc_debug: bool = True
 

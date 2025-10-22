@@ -7,7 +7,8 @@ from datetime import datetime, timedelta
 from typing import Optional, Callable, List
 from app.entities.interview_context import InterviewContext, PlannerField
 from app.entities.task_event import TaskEvent, TaskProperties
-from app.models.enums import EventType, WorkflowStepType, ToolName
+from app.models.enums import EventType, WorkflowStepType, ToolName, CompletionReason
+from app.services.interview_completion_service import interview_completion_service
 import structlog
 
 logger = structlog.get_logger()
@@ -410,6 +411,34 @@ class InterviewTimerMonitor:
                            session_duration_minutes=session_duration // 60,
                            total_planner_fields=len(self.interview_context.planner_fields),
                            finalization_time=datetime.utcnow().isoformat())
+            
+            # Mark interview as completed in database and send SQS notification
+            if self.interview_context.candidate_interview_id:
+                try:
+                    completion_result = await interview_completion_service.complete_interview(
+                        candidate_interview_id=self.interview_context.candidate_interview_id,
+                        completion_reason=CompletionReason.TIMER_EXPIRED,
+                        session_duration_seconds=session_duration,
+                        total_planner_fields=len(self.interview_context.planner_fields),
+                        transitions_completed=self.transitions_completed,
+                        additional_metadata={
+                            "mock_interview_id": self.interview_context.mock_interview_id,
+                            "session_id": self.interview_context.session_id
+                        }
+                    )
+                    
+                    self.logger.info("Interview completion workflow executed",
+                                   database_updated=completion_result.get("database_updated"),
+                                   notification_sent=completion_result.get("notification_sent"),
+                                   candidate_interview_id=self.interview_context.candidate_interview_id)
+                    
+                except Exception as completion_error:
+                    self.logger.error("Failed to execute completion workflow",
+                                    error=str(completion_error),
+                                    candidate_interview_id=self.interview_context.candidate_interview_id)
+                    # Continue with other cleanup even if completion fails
+            else:
+                self.logger.warning("Cannot complete interview - candidate_interview_id is None")
             
             # Trigger callback if provided
             if self.timer_callback:

@@ -1,6 +1,7 @@
 from typing import Optional, List
 from sqlmodel import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import text
 from app.dao.base_dao import BaseDAO
 from app.models.candidate_interview import CandidateInterview, CandidateInterviewStatus
 import structlog
@@ -92,13 +93,25 @@ class CandidateInterviewDAO(BaseDAO[CandidateInterview]):
     ) -> Optional[CandidateInterview]:
         """Update the status of a candidate interview"""
         try:
+            # Get the status value
+            status_value = status.value if isinstance(status, CandidateInterviewStatus) else status
+            
+            # Use raw SQL with explicit type casting to avoid PostgreSQL enum type mismatch
+            # Cast the status value to the correct enum type name
+            sql = text("""
+                UPDATE "CandidateInterview" 
+                SET status = CAST(:status_value AS "CandidateInterviewStatus"),
+                    "updatedAt" = NOW()
+                WHERE id = :interview_id
+            """)
+            
+            await db.execute(sql, {"status_value": status_value, "interview_id": interview_id})
+            await db.commit()
+            
+            # Fetch the updated interview
             interview = await self.get_by_id(db, interview_id)
-            if interview:
-                interview.status = status
-                db.add(interview)
-                await db.commit()
-                await db.refresh(interview)
-                logger.info("Updated interview status", interview_id=interview_id, status=status)
+            
+            logger.info("Updated interview status", interview_id=interview_id, status=status_value)
             return interview
         except Exception as e:
             await db.rollback()
