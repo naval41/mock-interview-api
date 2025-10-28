@@ -96,7 +96,7 @@ class SQSService:
                 QueueUrl=self.queue_url,
                 MessageBody=json.dumps(message_payload),
                 MessageAttributes={
-                    'CandidateInterviewId': {
+                    'candidateInterviewId': {
                         'StringValue': candidate_interview_id,
                         'DataType': 'String'
                     }

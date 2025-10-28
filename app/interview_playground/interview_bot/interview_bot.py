@@ -164,8 +164,7 @@ class InterviewBot:
             self.task = PipelineTask(
                 self.pipeline,
                 params=PipelineParams(
-                    allow_interruptions=True,
-                    interruption_strategies=[MinWordsInterruptionStrategy(min_words=3)],
+                    allow_interruptions=True
                 ),
                 observers=[RTVIObserver(self.rtvi_processor)],
             )

@@ -228,3 +228,4 @@ class DiagramStructure:
             self.connections = []
         if self.standalone_elements is None:
             self.standalone_elements = []
+
