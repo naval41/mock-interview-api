@@ -2,17 +2,10 @@
 Interview controller with pipecat integration for real-time voice interviews.
 """
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status, BackgroundTasks
-from sqlalchemy.ext.asyncio import AsyncSession
-from app.core.database import get_async_session
-from app.core.security import validate_request
+from fastapi import APIRouter, HTTPException, Request, status, BackgroundTasks
 from app.services.pipecat_service import pipecat_service
 from app.services.interview_context_service import interview_context_service
-from app.schemas.interview_schemas import (
-    WebRTCOffer, WebRTCAnswer, StartInterviewRequest, StartInterviewResponse,
-    InjectProblemRequest, InjectProblemResponse, InjectCustomContextRequest,
-    InjectCustomContextResponse, InterviewStatusResponse, ConnectionStatusResponse
-)
+from app.schemas.interview_schemas import StartInterviewRequest, StartInterviewResponse
 import structlog
 import uuid
 from datetime import datetime
@@ -20,68 +13,6 @@ from datetime import datetime
 logger = structlog.get_logger()
 
 router = APIRouter(prefix="/api", tags=["Interview"])
-
-
-@router.get("/test")
-async def test_endpoint():
-    """Simple test endpoint to debug hanging issues."""
-    print("Test endpoint called")
-    logger.info("Test endpoint called")
-    return {"message": "Test endpoint working", "timestamp": datetime.utcnow().isoformat()}
-
-
-@router.post("/start-interview", response_model=StartInterviewResponse)
-async def start_interview(
-    request: StartInterviewRequest,
-    background_tasks: BackgroundTasks = None
-):
-    """
-    Start a new interview session with pipecat integration.
-    """
-    try:
-        room_id = request.room_id
-        
-        print(f"Starting interview in room {room_id}")
-        logger.info(f"Starting interview in room {room_id}")
-        
-        # Create a unique session ID
-        session_id = str(uuid.uuid4())
-        
-        # Store interview session info (you can extend this with database storage)
-        session_info = {
-            "session_id": session_id,
-            "room_id": room_id,
-            "interview_type": request.interview_type,
-            "status": "created",
-            "created_at": datetime.utcnow().isoformat(),
-            "duration_minutes": request.duration_minutes,
-            "difficulty": request.difficulty,
-            "topics": request.topics
-        }
-        
-        # Start the interview bot in background (if WebRTC connection exists)
-        if background_tasks:
-            background_tasks.add_task(
-                pipecat_service.start_interview_bot, 
-                room_id
-            )
-        
-        logger.info(f"Interview session {session_id} created for room {room_id}")
-        
-        return StartInterviewResponse(
-            success=True,
-            message="Interview session created successfully",
-            room_id=room_id,
-            session_id=session_id,
-            connection_status=pipecat_service.get_connection_status(room_id)
-        )
-        
-    except Exception as e:
-        logger.error(f"Failed to start interview: {e}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to start interview"
-        )
 
 @router.post("/offer")
 async def handle_webrtc_offer(
@@ -175,7 +106,7 @@ async def handle_webrtc_offer(
             detail="Failed to establish WebRTC connection"
         )
 
-@router.delete("/close-connection/{room_id}")
+@router.get("/close-interview/{room_id}")
 async def close_connection(
     room_id: str
 ):

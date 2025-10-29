@@ -75,10 +75,9 @@ class PipecatInterviewService:
         
         @connection.event_handler("closed")
         async def handle_disconnected(webrtc_connection: SmallWebRTCConnection):
-            logger.info(f"Connection closed for room_id: {room_id}")
-            # Clean up connection and bot instance
-            self.connections.pop(room_id, None)
-            self.bot_instances.pop(room_id, None)
+            logger.info(f"Connection closed event triggered for room_id: {room_id}")
+            # Note: Cleanup is handled by explicit close_connection() call
+            # This handler is just for logging unexpected disconnections
     
     async def start_interview_bot(self, room_id: str, interview_context: Optional[Any] = None) -> bool:
         """
@@ -214,18 +213,43 @@ class PipecatInterviewService:
         }
     
     async def close_connection(self, room_id: str) -> bool:
-        """Close a specific connection."""
+        """Close a specific connection and clean up all resources."""
         try:
-            if room_id in self.connections:
-                connection = self.connections[room_id]
-                await connection.close()
-                self.connections.pop(room_id, None)
+            if room_id not in self.connections:
+                logger.warning(f"Connection not found for room_id: {room_id}")
+                return False
+            
+            # Get the connection before cleanup
+            connection = self.connections[room_id]
+            
+            # Stop the bot task first if it exists
+            if room_id in self.bot_instances:
+                bot_info = self.bot_instances[room_id]
+                bot_task = bot_info.get("task")
+                if bot_task and not bot_task.done():
+                    logger.info(f"Cancelling bot task for room_id: {room_id}")
+                    bot_task.cancel()
+                    try:
+                        await bot_task
+                    except asyncio.CancelledError:
+                        logger.info(f"Bot task cancelled successfully for room_id: {room_id}")
+                
+                # Clean up bot instance
                 self.bot_instances.pop(room_id, None)
-                logger.info(f"Connection closed for room_id: {room_id}")
-                return True
-            return False
+                logger.info(f"Bot instance cleaned up for room_id: {room_id}")
+            
+            # Remove from connections map BEFORE disconnecting
+            # This prevents the event handler from trying to clean up
+            self.connections.pop(room_id, None)
+            
+            # Disconnect the WebRTC connection (this triggers the "closed" event)
+            await connection.disconnect()
+            
+            logger.info(f"✅ All resources cleaned up successfully for room_id: {room_id}")
+            return True
+            
         except Exception as e:
-            logger.error(f"Failed to close connection for room_id {room_id}: {e}")
+            logger.error(f"Failed to close connection for room_id {room_id}: {str(e)}")
             return False
     
     async def cleanup_all(self):
