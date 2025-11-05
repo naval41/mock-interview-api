@@ -9,7 +9,7 @@ from app.interview_playground.transport.base_transport import BaseTransport
 class WebRTCTransport(BaseTransport):
     """WebRTC Transport implementation."""
     
-    def __init__(self, webrtc_connection, video_in_enabled: bool = False, 
+    def __init__(self, webrtc_connection, params=None, video_in_enabled: bool = False, 
                  video_out_enabled: bool = False, video_out_is_live: bool = False,
                  audio_in_enabled: bool = True, audio_out_enabled: bool = True,
                  vad_analyzer=None):
@@ -17,6 +17,7 @@ class WebRTCTransport(BaseTransport):
         
         Args:
             webrtc_connection: WebRTC connection object
+            params: Optional TransportParams object (includes turn_analyzer, vad_analyzer, etc)
             video_in_enabled: Whether video input is enabled
             video_out_enabled: Whether video output is enabled
             video_out_is_live: Whether video output is live
@@ -25,6 +26,7 @@ class WebRTCTransport(BaseTransport):
             vad_analyzer: Voice Activity Detection analyzer
         """
         self.webrtc_connection = webrtc_connection
+        self.params = params  # Store the complete params if provided
         self.video_in_enabled = video_in_enabled
         self.video_out_enabled = video_out_enabled
         self.video_out_is_live = video_out_is_live
@@ -41,8 +43,13 @@ class WebRTCTransport(BaseTransport):
         """
         from pipecat.transports.network.small_webrtc import SmallWebRTCTransport
         from pipecat.transports.base_transport import TransportParams
-            
-        transport_params = TransportParams(
+        
+        # If params was provided (with turn_analyzer), use it directly
+        # Otherwise create new TransportParams from individual properties
+        if self.params:
+            transport_params = self.params
+        else:
+            transport_params = TransportParams(
                 video_in_enabled=self.video_in_enabled,
                 video_out_enabled=self.video_out_enabled,
                 video_out_is_live=self.video_out_is_live,
