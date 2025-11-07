@@ -70,10 +70,10 @@ app.include_router(candidate_interview_planner_controller.router, prefix=setting
 @app.get("/")
 async def root():
     return {
-        "message": "Mock Interview API is running",
+        "message": "Roundz Interview API is running",
         "version": "1.0.0",
         "environment": settings.environment,
-                    "features": ["JWT Authentication", "Pipecat Integration", "Real-time Interviews", "Phase Management"],
+                    "features": ["ALL"],
         "docs_url": "/docs" if settings.environment == "local" else "Documentation disabled in production"
     }
 

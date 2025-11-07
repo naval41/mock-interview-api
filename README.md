@@ -54,6 +54,36 @@ app/
    ENV=production python -m uvicorn app.main:app --host 0.0.0.0 --port 8000
    ```
 
+## Docker
+
+- **Build the image**
+  ```bash
+  docker build -t mock-interview-api .
+  ```
+
+- **Run the container**
+  ```bash
+  docker run \
+    --name mock-interview-api \
+    --env-file config/production.env \
+    -e DATABASE_URL="postgresql+asyncpg://<user>:<password>@<host>:<port>/<db>" \
+    -p 8000:8000 \
+    mock-interview-api
+  ```
+
+- **Environment notes**
+  - `ENV` defaults to `production` in the image; override with `-e ENV=local` when mounting a local config file.
+  - Provide secrets (e.g. `JWT_SECRET_KEY`, AWS keys) via `--env` or an external `.env` file. Local development secrets are ignored by the build context via `.dockerignore`.
+  - Mount custom env files read-only if required: `-v $(pwd)/config/local.env:/app/config/local.env:ro`.
+
+- **System dependencies in the image**
+  - Installed packages: `build-essential`, `libpq-dev`, `ffmpeg`, `libsm6`, `libxext6`, `libxrender1`, `libgl1`, `libglib2.0-0`, `libsndfile1`, `libopus0`, `libvpx7`.
+  - Python dependencies are installed via `requirements.txt` into `/opt/venv`.
+
+- **Smoke test**
+  - Verify the container after startup: `curl http://localhost:8000/health`.
+
+
 ## API Endpoints
 
 ### Authentication
