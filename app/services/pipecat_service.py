@@ -9,7 +9,7 @@ from contextlib import asynccontextmanager
 import structlog
 
 # Core pipecat imports (these should be available)
-from pipecat.transports.network.webrtc_connection import SmallWebRTCConnection
+from pipecat.transports.smallwebrtc.connection import SmallWebRTCConnection
 
 logger = structlog.get_logger()
 
@@ -48,8 +48,8 @@ class PipecatInterviewService:
                 connection = SmallWebRTCConnection(self.ice_servers)
                 await connection.initialize(sdp=sdp, type=sdp_type)
                 
-                # Store room_id in connection for reference
-                connection.room_id = room_id
+                # Store room_id in connection for reference (best-effort, ignored by type checker)
+                setattr(connection, "room_id", room_id)  # type: ignore[attr-defined]
                 
                 # Setup connection event handlers
                 await self._setup_connection_handlers(connection, room_id)
@@ -59,6 +59,8 @@ class PipecatInterviewService:
             
             # Get SDP answer
             answer = connection.get_answer()
+            if answer is None:
+                raise RuntimeError(f"SmallWebRTCConnection.get_answer() returned None for room_id {room_id}")
             
             # Update connection map with pc_id
             self.connections[answer["pc_id"]] = connection
@@ -233,13 +235,16 @@ class PipecatInterviewService:
             
             connection = self.connections[room_id]
             if hasattr(connection, 'get_answer'):
-                return connection.get_answer()
+                answer = connection.get_answer()
+                if answer is None:
+                    raise RuntimeError(f"SmallWebRTCConnection.get_answer() returned None for room_id {room_id}")
+                return answer
             else:
                 # Fallback for placeholder connections
                 return {
                     "sdp": "placeholder_sdp_answer",
                     "type": "answer", 
-                    "pc_id": connection.get("pc_id", f"pc_{room_id}")
+                    "pc_id": getattr(connection, "pc_id", f"pc_{room_id}")
                 }
                 
         except Exception as e:
