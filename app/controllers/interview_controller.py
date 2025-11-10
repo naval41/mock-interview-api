@@ -2,12 +2,10 @@
 Interview controller with pipecat integration for real-time voice interviews.
 """
 
-from fastapi import APIRouter, HTTPException, Request, status, BackgroundTasks
+from fastapi import APIRouter, HTTPException, Request, status
 from app.services.pipecat_service import pipecat_service
 from app.services.interview_context_service import interview_context_service
-from app.schemas.interview_schemas import StartInterviewRequest, StartInterviewResponse
 import structlog
-import uuid
 from datetime import datetime
 
 logger = structlog.get_logger()
@@ -17,7 +15,6 @@ router = APIRouter(prefix="/api", tags=["Interview"])
 @router.post("/offer")
 async def handle_webrtc_offer(
     request: Request,
-    background_tasks: BackgroundTasks
 ):
     """
     Handle WebRTC offer and establish connection for interview.
@@ -30,16 +27,27 @@ async def handle_webrtc_offer(
         room_id = query_params.get("room_id")
         user_id = query_params.get("user_id")
         mock_interview_id = query_params.get("mock_interview_id")
-        
-        # Extract body parameters
-        body = await request.json()
 
+        if not room_id:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Missing required query parameter: room_id"
+            )
+        
+        body = await request.json()
         
         logger.info(f"Processing WebRTC offer for room {room_id}, user {user_id}, mock_interview_id {mock_interview_id}")
 
+        existing_connection = bool(room_id and room_id in pipecat_service.connections)
+
         # Build interview context if this is a new connection
         interview_context = None
-        if not (room_id and room_id in pipecat_service.connections):
+        if not existing_connection:
+            if not mock_interview_id or not user_id:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="mock_interview_id and user_id are required to start a new interview session"
+                )
             try:
                 # Create interview context from mock_interview_id and user_id
                 interview_context = await interview_context_service.build_interview_context(
@@ -62,41 +70,21 @@ async def handle_webrtc_offer(
                     detail="Failed to initialize interview context"
                 )
 
-        # Check if connection already exists for this room
-        if room_id and room_id in pipecat_service.connections:
-            pipecat_connection = pipecat_service.connections[room_id]
-            logger.info(f"Reusing existing connection for room_id: {room_id}")
-            
-            # Renegotiate existing connection
-            await pipecat_service.renegotiate_connection(
+        answer = await pipecat_service.create_connection(
+            room_id=room_id,
+            sdp=body["sdp"],
+            sdp_type=body["type"]
+        )
+
+        if not existing_connection:
+            await pipecat_service.start_interview_bot(
                 room_id=room_id,
-                sdp=body["sdp"], 
-                sdp_type=body["type"], 
-                restart_pc=body.get("restart_pc", False)
+                interview_context=interview_context
             )
-        else:
-            # Create new WebRTC connection
-            answer = await pipecat_service.create_connection(
-                room_id=room_id,
-                sdp=body["sdp"],
-                sdp_type=body["type"]
-            )
-            
-            # Start the interview bot in background with interview context
-            background_tasks.add_task(
-                pipecat_service.start_interview_bot, 
-                room_id,
-                interview_context  # Pass the interview context to the bot
-            )
-            
             logger.info(f"New WebRTC connection established for room {room_id}")
-            
-            return answer
-        
-        # For existing connections, get the current answer
-        answer = pipecat_service.get_answer(room_id)
-        
-        logger.info(f"WebRTC connection handled for room {room_id}")
+        else:
+            logger.info(f"WebRTC connection renegotiated for room {room_id}")
+
         return answer
         
     except Exception as e:
