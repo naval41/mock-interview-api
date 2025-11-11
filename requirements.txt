@@ -15,10 +15,10 @@ greenlet>=3.2.4
 # alembic>=1.13.1
 # pytest>=7.4.3
 # pytest-asyncio>=0.21.1
-# httpx>=0.25.2
+httpx>=0.25.2
 
 # Pipecat dependencies for interview functionality
-pipecat-ai[google,silero,webrtc,deepgram,local-smart-turn-v3]==0.0.91
+pipecat-ai[google,silero,webrtc,deepgram,local-smart-turn-v3,daily]==0.0.91
 python-dotenv>=1.1.1
 opencv-python>=4.11.0
 loguru>=0.7.3

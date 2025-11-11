@@ -3,14 +3,119 @@ Interview controller with pipecat integration for real-time voice interviews.
 """
 
 from fastapi import APIRouter, HTTPException, Request, status
+from pydantic import BaseModel
 from app.services.pipecat_service import pipecat_service
 from app.services.interview_context_service import interview_context_service
+from app.services.session_details_service import session_details_service
 import structlog
 from datetime import datetime
 
 logger = structlog.get_logger()
 
 router = APIRouter(prefix="/api", tags=["Interview"])
+
+
+class CreateRoomRequest(BaseModel):
+    room_id: str
+    user_id: str
+
+
+class CreateRoomResponse(BaseModel):
+    room_url: str
+    token: str
+
+
+class StartInterviewSessionRequest(BaseModel):
+    candidate_interview_id: str
+    user_id: str
+
+
+class StartInterviewSessionResponse(BaseModel):
+    success: bool
+    room_id: str
+
+
+@router.post("/create_room", response_model=CreateRoomResponse)
+async def create_room(payload: CreateRoomRequest):
+    """
+    Create a new interview room and return encrypted credentials.
+
+    The encryption logic is delegated to the pipecat service, which will be
+    implemented separately.
+    """
+    try:
+        room_id = payload.room_id.strip()
+        user_id = payload.user_id.strip()
+
+        if not room_id or not user_id:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="room_id and user_id are required",
+            )
+
+        result = await pipecat_service.create_interview_room(
+            room_id=room_id,
+            user_id=user_id,
+        )
+
+        if not result or "room_url" not in result or "token" not in result:
+            raise RuntimeError("Failed to generate room credentials")
+
+        return CreateRoomResponse(**result)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.error("Failed to create room", error=str(exc))
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Unable to create interview room",
+        )
+
+@router.post("/start_interview_session", response_model=StartInterviewSessionResponse)
+async def start_interview_session(payload: StartInterviewSessionRequest):
+    """
+    Decrypt supplied credentials and start an interview session.
+    """
+    candidate_interview_id = payload.candidate_interview_id.strip()
+    user_id = payload.user_id.strip()
+
+    if not candidate_interview_id or not user_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="room_id and user_id are required",
+        )
+
+    try:
+        session_details = await session_details_service.get_by_candidate_interview_id(candidate_interview_id)
+
+        if not session_details or not session_details.roomUrl or not session_details.roomToken:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Session details not found for room_id",
+            )
+
+        interview_context = await interview_context_service.build_interview_context(
+            candidate_interview_id=candidate_interview_id,
+            user_id=user_id,
+            session_id=candidate_interview_id,
+        )
+
+        started = await pipecat_service.start_interview_session(
+            room_id=candidate_interview_id,
+            token=session_details.roomToken,
+            user_id=user_id,
+            interview_context=interview_context,
+            room_url=session_details.roomUrl,
+        )
+        return StartInterviewSessionResponse(success=started, room_id=candidate_interview_id)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.error("Failed to start interview session", error=str(exc))
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Unable to start interview session",
+        )
 
 @router.post("/offer")
 async def handle_webrtc_offer(

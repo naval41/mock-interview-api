@@ -4,7 +4,7 @@ Mock Interview Bot that coordinates all pipecat components for interview session
 
 import asyncio
 import os
-from typing import Optional, Any, Dict
+from typing import Optional, Any, Dict, List, cast
 from pipecat.processors.aggregators.llm_response import LLMUserAggregatorParams
 import structlog
 from pipecat.audio.vad.vad_analyzer import VADParams
@@ -20,9 +20,7 @@ from pipecat.pipeline.task import PipelineParams, PipelineTask
 from pipecat.processors.aggregators.openai_llm_context import OpenAILLMContext
 from pipecat.processors.frameworks.rtvi import RTVIConfig, RTVIObserver, RTVIProcessor
 from pipecat.services.gemini_multimodal_live.gemini import GeminiMultimodalLiveLLMService, InputParams
-from pipecat.services.google.llm import GoogleLLMService
 from pipecat.transports.base_transport import TransportParams
-from pipecat.transports.network.small_webrtc import SmallWebRTCTransport
 
 from app.interview_playground.processors.processors_service import ProcessorsService
 from app.interview_playground.processors.context_switch_processor import ContextSwitchProcessor
@@ -40,10 +38,19 @@ from app.services.interview_completion_service import interview_completion_servi
 class InterviewBot:
     """Main orchestrator class for the mock interview bot."""
     
-    def __init__(self, webrtc_connection, room_id: str = None, interview_context=None):
+    def __init__(
+        self,
+        webrtc_connection,
+        room_id: Optional[str] = None,
+        interview_context=None,
+        room_url: Optional[str] = None,
+        room_joining_token: Optional[str] = None,
+    ):
         self.webrtc_connection = webrtc_connection
         self.room_id = room_id or getattr(webrtc_connection, 'pc_id', 'unknown')
         self.interview_context = interview_context
+        self.room_url = room_url
+        self.room_joining_token = room_joining_token
         
         # Create a logger context for this session
         self.logger = structlog.get_logger().bind(room_id=self.room_id)
@@ -56,16 +63,16 @@ class InterviewBot:
                            current_sequence=self.interview_context.current_workflow_step_sequence)
         
         # Pipecat components
-        self.transport = None
-        self.tts = None
-        self.stt = None
-        self.llm_service = None
-        self.context_aggregator = None
-        self.rtvi_processor = None
-        self.pipeline = None
-        self.task = None
-        self.runner = None
-        self.custom_processors = None
+        self.transport: Any = None
+        self.tts: Any = None
+        self.stt: Any = None
+        self.llm_service: Any = None
+        self.context_aggregator: Any = None
+        self.rtvi_processor: Any = None
+        self.pipeline: Any = None
+        self.task: Any = None
+        self.runner: Any = None
+        self.custom_processors: List[Any] = []
         
         # Timer and context management components
         self.context_switch_processor = None
@@ -77,7 +84,7 @@ class InterviewBot:
         
         # Transcript processing
         self.transcript_service = TranscriptService()
-        self.transcript_processor = None
+        self.transcript_processor: Any = None
         
         # Interview state management
         self.interview_phase = "initializing"
@@ -205,38 +212,53 @@ class InterviewBot:
 
         
     async def _setup_transport(self):
-        """Setup WebRTC transport."""
+        """Setup transport (WebRTC or Daily)."""
         try:
-            # Try to setup VAD, but make it optional
-            vad_analyzer = None
-            try:
-                vad_analyzer = SileroVADAnalyzer(
-                    params=VADParams(
-                        confidence=0.7,      # Minimum confidence for voice detection
-                        start_secs=0.2,      # Time to wait before confirming speech start
-                        stop_secs=0.2,       # Time to wait before confirming speech stop
-                        min_volume=0.6,      # Minimum volume threshold
-                    )
+            if self.room_url and self.room_joining_token:
+                display_name = getattr(self.interview_context, "user_id", None) or "Alex"
+                transport_service = TransportService(
+                    provider="daily",
+                    room_url=self.room_url,
+                    token=self.room_joining_token,
+                    display_name=display_name,
                 )
-                self.logger.info("🎤 Silero VAD analyzer setup completed")
-            except ImportError as e:
-                self.logger.warning(f"Silero VAD not available: {e}. Continuing without VAD.")
-            except Exception as e:
-                self.logger.warning(f"Failed to setup VAD: {e}. Continuing without VAD.")
-            
-            transport_params = TransportParams(
-                video_in_enabled=False,
-                video_out_enabled=False,
-                video_out_is_live=False,
-                audio_in_enabled=True,
-                audio_out_enabled=True,
-                vad_analyzer=vad_analyzer,
-                turn_analyzer=LocalSmartTurnAnalyzerV3(params=SmartTurnParams()),
-            )
-            
-            transportService = TransportService(provider="webrtc", webrtc_connection=self.webrtc_connection, params=transport_params)
-            self.transport = transportService.setup_processor()
-            
+            else:
+                # Try to setup VAD, but make it optional
+                vad_analyzer = None
+                try:
+                    vad_analyzer = SileroVADAnalyzer(
+                        params=VADParams(
+                            confidence=0.7,
+                            start_secs=0.2,
+                            stop_secs=0.2,
+                            min_volume=0.6,
+                        )
+                    )
+                    self.logger.info("🎤 Silero VAD analyzer setup completed")
+                except ImportError as e:
+                    self.logger.warning(f"Silero VAD not available: {e}. Continuing without VAD.")
+                except Exception as e:
+                    self.logger.warning(f"Failed to setup VAD: {e}. Continuing without VAD.")
+
+                transport_params = TransportParams(
+                    video_in_enabled=False,
+                    video_out_enabled=False,
+                    video_out_is_live=False,
+                    audio_in_enabled=True,
+                    audio_out_enabled=True,
+                    vad_analyzer=vad_analyzer,
+                    turn_analyzer=LocalSmartTurnAnalyzerV3(params=SmartTurnParams()),
+                )
+
+                transport_service = TransportService(
+                    provider="webrtc",
+                    webrtc_connection=self.webrtc_connection,
+                    params=transport_params,
+                )
+
+            transport_processor = transport_service.setup_processor()
+            self.transport = cast(Any, transport_processor)
+
             self.logger.info("🔗 Transport setup completed")
             
         except Exception as e:
@@ -457,7 +479,7 @@ class InterviewBot:
         except Exception as e:
             self.logger.error(f"Failed to start initial interview phase: {e}")
     
-    def _get_initial_planner_instructions(self) -> str:
+    def _get_initial_planner_instructions(self) -> Optional[str]:
         """Get the initial planner field instructions for LLM initialization.
         
         Returns:
@@ -504,6 +526,9 @@ class InterviewBot:
         Returns:
             Formatted instructions string
         """
+        if not self.interview_context:
+            return instructions
+
         session_info = f"""
 --- INTERVIEW SESSION CONTEXT ---
 

@@ -2,8 +2,8 @@
 Transport service for creating and managing transport implementations.
 """
 
-from app.interview_playground.transport.base_transport import BaseTransport
 from app.interview_playground.transport.webrtc_transport import WebRTCTransport
+from app.interview_playground.transport.daily_transport import DailyTransportImpl
 
 
 class TransportService:
@@ -27,7 +27,8 @@ class TransportService:
             FrameProcessor instance
         """
         if not self._transport_instance:
-            if self.provider.lower() == "webrtc":
+            provider = self.provider.lower()
+            if provider == "webrtc":
                 webrtc_connection = self.kwargs.get("webrtc_connection")
                 if not webrtc_connection:
                     raise ValueError("webrtc_connection is required for WebRTC transport")
@@ -50,6 +51,22 @@ class TransportService:
                     audio_in_enabled=audio_in_enabled,
                     audio_out_enabled=audio_out_enabled,
                     vad_analyzer=vad_analyzer
+                )
+            elif provider == "daily":
+                room_url = self.kwargs.get("room_url")
+                token = self.kwargs.get("token")
+                params = self.kwargs.get("params")
+
+                if not room_url or not token:
+                    raise ValueError("room_url and token are required for Daily transport")
+
+                self._transport_instance = DailyTransportImpl(
+                    room_url=room_url,
+                    token=token,
+                    params=params,
+                    audio_in_enabled=self.kwargs.get("audio_in_enabled", True),
+                    audio_out_enabled=self.kwargs.get("audio_out_enabled", True),
+                    transcription_enabled=self.kwargs.get("transcription_enabled", True),
                 )
             else:
                 raise ValueError(f"Unknown transport provider: {self.provider}")

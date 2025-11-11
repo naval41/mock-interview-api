@@ -3,13 +3,20 @@ Pipecat service for managing WebRTC connections and interview sessions.
 """
 
 import asyncio
-import os
-from typing import Dict, Optional, Any
-from contextlib import asynccontextmanager
+import base64
+import hashlib
+from datetime import datetime, timedelta, timezone
+from typing import Any, Dict, Optional
 import structlog
 
 # Core pipecat imports (these should be available)
 from pipecat.transports.smallwebrtc.connection import SmallWebRTCConnection
+
+from cryptography.fernet import Fernet
+
+from app.core.config import settings
+from app.sao.daily_sao import daily_sao
+from app.services.session_details_service import session_details_service
 
 logger = structlog.get_logger()
 
@@ -71,7 +78,176 @@ class PipecatInterviewService:
         except Exception as e:
             logger.error(f"Failed to create connection for room_id {room_id}: {e}")
             raise
+
+    async def create_interview_room(self, room_id: str, user_id: str) -> Dict[str, Any]:
+        """
+        Create a Daily.co room and meeting token, returning encrypted credentials.
+        """
+        logger.info("Creating Daily room", room_id=room_id, user_id=user_id)
+
+        if not settings.daily_api_key:
+            raise RuntimeError("Daily API key is not configured")
+
+        if not settings.encryption_key:
+            raise RuntimeError("Encryption key is not configured")
+
+        if not settings.daily_room_domain:
+            raise RuntimeError("Daily room domain is not configured")
+
+        existing_session = await session_details_service.get_by_candidate_interview_id(room_id)
+
+        if existing_session and existing_session.roomUrl and existing_session.roomToken:
+            logger.info(
+                "Using existing session details",
+                room_id=room_id,
+            )
+            room_url = existing_session.roomUrl
+            token_value = existing_session.roomToken
+        else:
+            expires_at = datetime.now(timezone.utc) + timedelta(hours=1, minutes=5)
+
+            room_response = await daily_sao.create_room(
+                room_name=room_id,
+                expires_at=expires_at,
+            )
+            room_url = room_response.get("url") or self._build_room_url(room_id)
+
+            token_response = await daily_sao.create_meeting_token(
+                room_name=room_id,
+                user_id=user_id,
+                expires_at=expires_at,
+            )
+
+            token_value = token_response.get("token")
+            if not token_value:
+                raise RuntimeError("Daily meeting token response did not include a token")
+
+            await session_details_service.create_or_update_session(
+                candidate_interview_id=room_id,
+                generated_session_id=room_id,
+                room_url=room_url,
+                room_token=token_value,
+            )
+
+        encrypted_url = self._encrypt_value(room_url)
+        encrypted_token = self._encrypt_value(token_value)
+
+        logger.info("Daily room created successfully", room_id=room_id)
+
+        return {
+            "room_url": encrypted_url,
+            "token": encrypted_token,
+        }
+
+    def _encrypt_value(self, value: str) -> str:
+        fernet = self._get_fernet()
+        return fernet.encrypt(value.encode("utf-8")).decode("utf-8")
+
+    def decrypt_value(self, value: str) -> str:
+        fernet = self._get_fernet()
+        return fernet.decrypt(value.encode("utf-8")).decode("utf-8")
+
+    def _get_fernet(self) -> Fernet:
+        key = settings.encryption_key
+        fernet_key = self._derive_fernet_key(key)
+        return Fernet(fernet_key)
+
+    @staticmethod
+    def _derive_fernet_key(raw_key: str) -> bytes:
+        raw_bytes = raw_key.encode("utf-8")
+
+        try:
+            decoded = base64.urlsafe_b64decode(raw_bytes)
+            if len(decoded) == 32:
+                return base64.urlsafe_b64encode(decoded)
+        except Exception:
+            pass
+
+        digest = hashlib.sha256(raw_bytes).digest()
+        return base64.urlsafe_b64encode(digest)
+
+    def _build_room_url(self, room_id: str) -> str:
+        base_domain = settings.daily_room_domain.rstrip("/")
+        return f"{base_domain}/{room_id}"
     
+    async def start_interview_session(
+        self,
+        room_id: str,
+        token: str,
+        user_id: str,
+        interview_context: Optional[Any] = None,
+        room_url: Optional[str] = None,
+    ) -> bool:
+        """
+        Start an interview session using Daily.co transport with decrypted credentials.
+        
+        Args:
+            room_id: Room identifier (candidate_interview_id)
+            token: Daily meeting token
+            user_id: User identifier
+            interview_context: Interview context object with planner details
+            room_url: Daily room URL
+            
+        Returns:
+            True if session started successfully, False otherwise
+        """
+        logger.info(f"Starting interview session for room_id: {room_id}")
+        
+        if not room_url or not token:
+            logger.error(f"Missing required credentials for room_id: {room_id}")
+            return False
+        
+        if interview_context:
+            logger.info(f"Interview context provided", 
+                       mock_interview_id=interview_context.mock_interview_id,
+                       planner_fields_count=len(interview_context.planner_fields))
+        
+        try:
+            # Check if bot already exists for this room
+            if room_id in self.bot_instances:
+                bot_info = self.bot_instances[room_id]
+                if bot_info.get("status") == "running":
+                    logger.warning(f"Interview session already running for room_id: {room_id}")
+                    return True
+            
+            # Import the InterviewBot class
+            from app.interview_playground.interview_bot import InterviewBot
+            
+            # Create the interview bot instance with Daily transport credentials
+            # Pass None for webrtc_connection since we're using Daily transport
+            logger.info(f"Creating InterviewBot for room_id: {room_id} with Daily transport")
+            bot = InterviewBot(
+                webrtc_connection=None,
+                room_id=room_id,
+                interview_context=interview_context,
+                room_url=room_url,
+                room_joining_token=token
+            )
+            
+            # Initialize the bot (this sets up Daily transport)
+            logger.info(f"Initializing InterviewBot for room_id: {room_id}")
+            await bot.initialize()
+            
+            # Start the bot in the background
+            logger.info(f"Starting MockInterviewBot pipeline for room_id: {room_id}")
+            bot_task = asyncio.create_task(bot.run())
+            
+            # Store the bot instance and task
+            self.bot_instances[room_id] = {
+                "bot": bot,
+                "task": bot_task,
+                "status": "running",
+                "room_id": room_id,
+                "started_at": asyncio.get_event_loop().time()
+            }
+            
+            logger.info(f"✅ Interview session started successfully for room_id: {room_id}")
+            return True
+            
+        except Exception as e:
+            logger.error(f"Failed to start interview session for room_id {room_id}: {e}", exc_info=True)
+            return False
+
     async def _setup_connection_handlers(self, connection: SmallWebRTCConnection, room_id: str):
         """Setup event handlers for the WebRTC connection."""
         

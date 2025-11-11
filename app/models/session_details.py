@@ -3,13 +3,23 @@ from typing import Optional
 from datetime import datetime
 import uuid
 from .enums import SessionStatus
+from sqlalchemy import Column, Enum
 
 
 class SessionDetailsBase(SQLModel):
     candidateInterviewId: str = Field(unique=True)
     generatedSessionId: str = Field(unique=True)
-    status: SessionStatus = Field(default=SessionStatus.NOT_STARTED)
+    status: SessionStatus = Field(
+        default=SessionStatus.NOT_STARTED,
+        sa_column=Column(
+            Enum(SessionStatus, name="SessionStatus"),
+            nullable=False,
+            server_default=SessionStatus.NOT_STARTED.value,
+        ),
+    )
     completedAt: Optional[datetime] = None
+    roomUrl: Optional[str] = None
+    roomToken: Optional[str] = None
 
 
 class SessionDetails(SessionDetailsBase, table=True):

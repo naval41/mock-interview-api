@@ -19,6 +19,14 @@ class Settings(BaseSettings):
     # Pipecat API Keys
     deepgram_api_key: str = ""
     google_api_key: str = ""
+
+    # Daily.co integration
+    daily_api_key: str = ""
+    daily_api_base_url: str = "https://api.daily.co/v1"
+    daily_room_domain: str = ""
+
+    # Encryption
+    encryption_key: str = ""
     
     # AWS SQS Configuration
     aws_region: str = "ap-south-1"
