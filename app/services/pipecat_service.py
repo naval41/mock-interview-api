@@ -129,14 +129,15 @@ class PipecatInterviewService:
                 room_token=token_value,
             )
 
-        encrypted_url = self._encrypt_value(room_url)
-        encrypted_token = self._encrypt_value(token_value)
+        #encrypted_url = self._encrypt_value(room_url)
+        #encrypted_token = self._encrypt_value(token_value)
 
         logger.info("Daily room created successfully", room_id=room_id)
 
         return {
-            "room_url": encrypted_url,
-            "token": encrypted_token,
+            "dailyRoom": room_url,
+            "dailyToken": token_value,
+            "sessionId": room_id
         }
 
     def _encrypt_value(self, value: str) -> str:

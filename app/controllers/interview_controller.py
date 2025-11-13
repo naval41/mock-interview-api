@@ -16,17 +16,17 @@ router = APIRouter(prefix="/api", tags=["Interview"])
 
 
 class CreateRoomRequest(BaseModel):
-    room_id: str
+    candidate_interview_id: str
     user_id: str
 
-
 class CreateRoomResponse(BaseModel):
-    room_url: str
-    token: str
+    dailyRoom: str
+    dailyToken: str
+    sessionId: str
 
 
 class StartInterviewSessionRequest(BaseModel):
-    candidate_interview_id: str
+    candidateInterviewId: str
     user_id: str
 
 
@@ -35,7 +35,7 @@ class StartInterviewSessionResponse(BaseModel):
     room_id: str
 
 
-@router.post("/create_room", response_model=CreateRoomResponse)
+@router.post("/create-room", response_model=CreateRoomResponse)
 async def create_room(payload: CreateRoomRequest):
     """
     Create a new interview room and return encrypted credentials.
@@ -44,7 +44,7 @@ async def create_room(payload: CreateRoomRequest):
     implemented separately.
     """
     try:
-        room_id = payload.room_id.strip()
+        room_id = payload.candidate_interview_id.strip()
         user_id = payload.user_id.strip()
 
         if not room_id or not user_id:
@@ -58,8 +58,10 @@ async def create_room(payload: CreateRoomRequest):
             user_id=user_id,
         )
 
-        if not result or "room_url" not in result or "token" not in result:
+        if not result or "dailyRoom" not in result or "dailyToken" not in result:
             raise RuntimeError("Failed to generate room credentials")
+
+        await start_interview(room_id, user_id)
 
         return CreateRoomResponse(**result)
     except HTTPException:
@@ -71,12 +73,52 @@ async def create_room(payload: CreateRoomRequest):
             detail="Unable to create interview room",
         )
 
-@router.post("/start_interview_session", response_model=StartInterviewSessionResponse)
+async def start_interview(candidate_interview_id: str, user_id: str):
+    
+    if not candidate_interview_id or not user_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="room_id and user_id are required",
+        )
+
+    try:
+        session_details = await session_details_service.get_by_candidate_interview_id(candidate_interview_id)
+
+        if not session_details or not session_details.roomUrl or not session_details.roomToken:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Session details not found for room_id",
+            )
+
+        interview_context = await interview_context_service.build_interview_context(
+            candidate_interview_id=candidate_interview_id,
+            user_id=user_id,
+            session_id=candidate_interview_id,
+        )
+
+        started = await pipecat_service.start_interview_session(
+            room_id=candidate_interview_id,
+            token=session_details.roomToken,
+            user_id=user_id,
+            interview_context=interview_context,
+            room_url=session_details.roomUrl,
+        )
+        return StartInterviewSessionResponse(success=started, room_id=candidate_interview_id)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.error("Failed to start interview session", error=str(exc))
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Unable to start interview session",
+        )
+
+@router.post("/start-interview-session", response_model=StartInterviewSessionResponse)
 async def start_interview_session(payload: StartInterviewSessionRequest):
     """
     Decrypt supplied credentials and start an interview session.
     """
-    candidate_interview_id = payload.candidate_interview_id.strip()
+    candidate_interview_id = payload.candidateInterviewId.strip()
     user_id = payload.user_id.strip()
 
     if not candidate_interview_id or not user_id:

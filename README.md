@@ -148,6 +148,10 @@ Key environment variables in `config/*.env`:
 - `LOG_LEVEL` - Logging level (DEBUG, INFO, WARNING, ERROR)
 - `ENVIRONMENT` - Runtime environment (local, production)
 - `CORS_ORIGINS` - Allowed CORS origins
+- `DAILY_API_KEY` - Daily.co REST API token
+- `DAILY_API_BASE_URL` - Base URL for Daily.co API (defaults to `https://api.daily.co/v1`)
+- `DAILY_ROOM_DOMAIN` - Daily.co subdomain used to build room URLs
+- `ENCRYPTION_KEY` - Shared secret used to encrypt room URLs and meeting tokens
 
 ## Authentication Flow
 
