@@ -12,7 +12,7 @@ from datetime import datetime
 
 logger = structlog.get_logger()
 
-router = APIRouter(prefix="/api", tags=["Interview"])
+router = APIRouter(prefix="/interview/api/v1", tags=["Interview"])
 
 
 class CreateRoomRequest(BaseModel):
