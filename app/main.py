@@ -42,12 +42,13 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(
-    title="Mock Interview API",
-    description="A Roundz Mock Interview API with Pipecat Integration",
+    title="Interview API",
+    description="A Roundz Interview API with Pipecat Integration",
     version="1.0.0",
     lifespan=lifespan,
     docs_url="/docs" if settings.environment == "local" else None,
     redoc_url="/redoc" if settings.environment == "local" else None,
+    root_path="/interview/api/v1"
 )
 
 app.add_middleware(
@@ -129,7 +130,7 @@ if __name__ == "__main__":
     uvicorn.run(
         "app.main:app",
         host="0.0.0.0",
-        port=8000,
+        port=5000,
         reload=settings.environment == "local",
         log_config=None
     )
