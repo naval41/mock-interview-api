@@ -49,9 +49,10 @@ async def get_db_session() -> AsyncSession:
 
 
 async def create_db_and_tables():
+    logger.info("Creating database tables")
+    logger.info(f"Database URL: {settings.database_url}")
     async with engine.begin() as conn:
         await conn.run_sync(SQLModel.metadata.create_all)
-
 
 async def close_db():
     await engine.dispose()
