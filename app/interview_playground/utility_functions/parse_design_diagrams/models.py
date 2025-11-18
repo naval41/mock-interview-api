@@ -229,3 +229,4 @@ class DiagramStructure:
         if self.standalone_elements is None:
             self.standalone_elements = []
 
+

@@ -35,3 +35,4 @@ class SessionDetailsDAO(BaseDAO[SessionDetails]):
 
 session_details_dao = SessionDetailsDAO()
 
+

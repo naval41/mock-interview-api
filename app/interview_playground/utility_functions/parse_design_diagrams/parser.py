@@ -756,3 +756,4 @@ class ExcalidrawParser:
         self.logger.debug(f"Successfully processed {len(elements)} elements")
         return elements
 
+
