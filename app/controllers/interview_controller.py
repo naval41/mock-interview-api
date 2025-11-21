@@ -16,7 +16,7 @@ router = APIRouter(tags=["Interview"])
 
 
 class CreateRoomRequest(BaseModel):
-    candidate_Interview_Id: str
+    candidate_interview_id: str
     user_id: str
 
 class CreateRoomResponse(BaseModel):
@@ -44,8 +44,10 @@ async def create_room(payload: CreateRoomRequest):
     implemented separately.
     """
     try:
-        room_id = payload.candidate_Interview_Id.strip()
+        room_id = payload.candidate_interview_id.strip()
         user_id = payload.user_id.strip()
+
+        logger.info("Creating room", room_id=room_id, user_id=user_id)
 
         if not room_id or not user_id:
             raise HTTPException(

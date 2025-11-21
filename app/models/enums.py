@@ -27,6 +27,7 @@ class PaymentMethod(str, Enum):
 class CandidateInterviewStatus(str, Enum):
     PENDING = "PENDING"
     IN_PROGRESS = "IN_PROGRESS"
+    REVIEW_IN_PROGRESS = "REVIEW_IN_PROGRESS"
     COMPLETED = "COMPLETED"
 
 

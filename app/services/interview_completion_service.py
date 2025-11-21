@@ -100,13 +100,7 @@ class InterviewCompletionService:
             # Step 4: Send SQS notification FIRST (before DB update)
             try:
                 sqs_result = await self._send_completion_notification(
-                    interview=interview,
-                    completion_reason=completion_reason,
-                    completion_timestamp=completion_timestamp,
-                    session_duration_seconds=session_duration_seconds,
-                    total_planner_fields=total_planner_fields,
-                    transitions_completed=transitions_completed,
-                    additional_metadata=additional_metadata
+                    interview=interview
                 )
                 
                 result["notification_sent"] = sqs_result.get("notification_sent", False)
@@ -131,11 +125,11 @@ class InterviewCompletionService:
                 updated_interview = await self._update_interview_status(
                     db, 
                     candidate_interview_id, 
-                    CandidateInterviewStatus.COMPLETED
+                    CandidateInterviewStatus.REVIEW_IN_PROGRESS
                 )
                 result["database_updated"] = True
                 result["previous_status"] = interview.status.value
-                result["new_status"] = CandidateInterviewStatus.COMPLETED.value
+                result["new_status"] = CandidateInterviewStatus.REVIEW_IN_PROGRESS.value
                 
                 logger.info("✅ Interview status updated to COMPLETED in database",
                            candidate_interview_id=candidate_interview_id,
@@ -260,12 +254,6 @@ class InterviewCompletionService:
     async def _send_completion_notification(
         self,
         interview: CandidateInterview,
-        completion_reason: CompletionReason,
-        completion_timestamp: str,
-        session_duration_seconds: int,
-        total_planner_fields: int,
-        transitions_completed: int,
-        additional_metadata: Optional[Dict[str, Any]]
     ) -> Dict[str, Any]:
         """Send interview completion notification to SQS.
         
