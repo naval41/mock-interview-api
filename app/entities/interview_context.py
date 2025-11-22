@@ -69,10 +69,6 @@ class PlannerField:
     
     def __post_init__(self):
         """Validate required fields after initialization"""
-        if not self.question_id:
-            raise ValueError("question_id cannot be empty")
-        if not self.knowledge_bank_id:
-            raise ValueError("knowledge_bank_id cannot be empty")
         if self.sequence < 0:
             raise ValueError("sequence cannot be negative")
         if self.duration <= 0:

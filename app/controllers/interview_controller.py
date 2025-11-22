@@ -243,7 +243,7 @@ async def handle_webrtc_offer(
             detail="Failed to establish WebRTC connection"
         )
 
-@router.get("/close-interview/{room_id}")
+@router.delete("/close-interview/{room_id}")
 async def close_connection(
     room_id: str
 ):

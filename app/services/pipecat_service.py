@@ -104,7 +104,11 @@ class PipecatInterviewService:
             room_url = existing_session.roomUrl
             token_value = existing_session.roomToken
         else:
-            expires_at = datetime.now(timezone.utc) + timedelta(hours=1, minutes=5)
+            logger.info(
+                "Creating a new Session Details",
+                room_id=room_id,
+            )
+            expires_at = datetime.now(timezone.utc) + timedelta(hours=24)
 
             room_response = await daily_sao.create_room(
                 room_name=room_id,
