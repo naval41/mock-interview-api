@@ -4,7 +4,6 @@ Design Context Processor implementation that extends BaseProcessor.
 
 import asyncio
 import time
-from pipecat.processors.frame_processor import FrameProcessor
 from pipecat.frames.frames import Frame, LLMMessagesAppendFrame
 from pipecat.processors.frame_processor import FrameDirection
 from pipecat.processors.frameworks.rtvi import RTVIClientMessageFrame

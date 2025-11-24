@@ -4,7 +4,6 @@ Interview Gate Processor for filtering frames after interview completion.
 
 from app.interview_playground.processors.base_processor import BaseProcessor
 from pipecat.frames.frames import SystemFrame, ControlFrame, StartFrame, EndFrame
-from pipecat.processors.frame_processor import FrameDirection
 import structlog
 
 

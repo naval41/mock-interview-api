@@ -1,19 +1,10 @@
-from typing import Optional, List
-from sqlalchemy.ext.asyncio import AsyncSession
+from typing import List
 from app.core.database import get_db_session
 from app.dao.candidate_interview_dao import candidate_interview_dao
-from app.dao.candidate_interview_planner_dao import candidate_interview_planner_dao
 from app.models.candidate_interview import (
-    CandidateInterview, 
-    CandidateInterviewCreate, 
-    CandidateInterviewRead, 
-    CandidateInterviewUpdate
+    CandidateInterviewRead
 )
-from app.models.candidate_interview_planner import (
-    CandidateInterviewPlanner,
-    CandidateInterviewPlannerCreate,
-    CandidateInterviewPlannerRead
-)
+
 from app.models.enums import CandidateInterviewStatus
 import structlog
 

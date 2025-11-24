@@ -3,7 +3,7 @@ Base Processor class that extends FrameProcessor for direct pipeline integration
 """
 
 from abc import ABC
-from pipecat.frames.frames import Frame, StartFrame
+from pipecat.frames.frames import Frame
 from pipecat.processors.frame_processor import FrameDirection
 from pipecat.processors.frame_processor import FrameProcessor
 

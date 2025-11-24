@@ -2,11 +2,9 @@
 ContextSwitchProcessor for managing LLM instruction transitions during interview phases.
 """
 
-from datetime import datetime
-from pipecat.frames.frames import BotInterruptionFrame, ControlFrame, Frame, LLMMessagesAppendFrame, LLMTextFrame, InterruptionTaskFrame
+from pipecat.frames.frames import Frame, LLMMessagesAppendFrame
 from app.interview_playground.frames.interview_frames import InterviewClosureFrame
 from pipecat.processors.frame_processor import FrameDirection
-from pipecat.processors.frameworks.rtvi import RTVIClientMessageFrame
 from app.interview_playground.processors.base_processor import BaseProcessor
 from app.entities.interview_context import InterviewContext, PlannerField
 import structlog
@@ -38,11 +36,6 @@ class ContextSwitchProcessor(BaseProcessor):
     
     async def process_custom_frame(self, frame: Frame, direction: FrameDirection):
         """Process frames after StartFrame validation."""
-        # Handle RTVI client messages and other frames as needed
-        if isinstance(frame, RTVIClientMessageFrame):
-            self.logger.debug("RTVI client message received in context switch processor")
-        
-        # Continue processing the frame
         await self.push_frame(frame, direction)
     
     async def inject_planner_instructions(self, planner_field: PlannerField):
@@ -151,16 +144,14 @@ class ContextSwitchProcessor(BaseProcessor):
         transition_message = f"""
 --- INTERVIEW PHASE TRANSITION ---
 
-You are now entering Phase {planner_field.sequence + 1} of the interview.
+Great job so far! You are now moving into Phase {planner_field.sequence + 1} of the interview.
 
-Please smoothly transition to this new phase while maintaining the conversational flow. 
-Acknowledge the phase change naturally and begin following the new instructions.
+This next phase will last approximately {planner_field.duration} minutes. Please smoothly transition your focus accordingly.
 
-Duration: {planner_field.duration} minutes
-Focus Area: Question ID {planner_field.question_id}
+Before starting, briefly acknowledge this transition and confirm understanding of the new instructions below.  
+Then proceed conversationally, maintaining a natural and engaging tone that respects the candidate’s experience and interview timing.
 
-New Instructions:
-
+New Phase Instructions:
 {instructions}
 
 --- END PHASE TRANSITION ---

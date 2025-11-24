@@ -4,7 +4,7 @@ Code Context Processor implementation that extends BaseProcessor.
 from typing import Optional
 import asyncio
 import time
-from pipecat.frames.frames import Frame, InputTextRawFrame, LLMMessagesAppendFrame, LLMMessagesUpdateFrame
+from pipecat.frames.frames import Frame, LLMMessagesAppendFrame
 from pipecat.processors.frame_processor import FrameDirection
 from pipecat.processors.frameworks.rtvi import RTVIClientMessageFrame
 from app.interview_playground.processors.base_processor import BaseProcessor

@@ -2,15 +2,12 @@
 Mock Interview Bot that coordinates all pipecat components for interview sessions.
 """
 
-import asyncio
-import os
 from typing import Optional, Any, Dict, List, cast
 from pipecat.processors.aggregators.llm_response import LLMUserAggregatorParams
 import structlog
 from pipecat.audio.vad.vad_analyzer import VADParams
 from app.core.config import settings
 
-from pipecat.audio.interruptions.min_words_interruption_strategy import MinWordsInterruptionStrategy
 from pipecat.audio.turn.smart_turn.base_smart_turn import SmartTurnParams
 from pipecat.audio.turn.smart_turn.local_smart_turn_v3 import LocalSmartTurnAnalyzerV3
 from pipecat.audio.vad.silero import SileroVADAnalyzer
@@ -19,7 +16,6 @@ from pipecat.pipeline.runner import PipelineRunner
 from pipecat.pipeline.task import PipelineParams, PipelineTask
 from pipecat.processors.aggregators.openai_llm_context import OpenAILLMContext
 from pipecat.processors.frameworks.rtvi import RTVIConfig, RTVIObserver, RTVIProcessor
-from pipecat.services.gemini_multimodal_live.gemini import GeminiMultimodalLiveLLMService, InputParams
 from pipecat.transports.base_transport import TransportParams
 
 from app.interview_playground.processors.processors_service import ProcessorsService

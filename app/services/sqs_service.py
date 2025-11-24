@@ -3,7 +3,7 @@ AWS SQS Service for sending interview completion notifications.
 """
 
 import json
-from typing import Dict, Any, Optional
+from typing import Dict, Any
 import boto3
 from botocore.exceptions import ClientError, BotoCoreError
 from app.core.config import settings

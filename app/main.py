@@ -7,7 +7,6 @@ import uvicorn
 from app.core.config import settings
 from app.core.database import create_db_and_tables, close_db
 from app.core.logging import setup_logging
-from app.middleware.logging_middleware import LoggingMiddleware, StructlogMiddleware
 from app.controllers import auth_controller, interview_controller
 from app.services.pipecat_service import pipecat_service
 

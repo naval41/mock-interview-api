@@ -4,8 +4,7 @@ Interview Closure Handler for converting closure frames to LLM text frames.
 
 from app.interview_playground.processors.base_processor import BaseProcessor
 from app.interview_playground.frames.interview_frames import InterviewClosureFrame
-from pipecat.frames.frames import LLMMessagesAppendFrame, LLMTextFrame, StartFrame, EndFrame
-from pipecat.processors.frame_processor import FrameDirection
+from pipecat.frames.frames import LLMMessagesAppendFrame, StartFrame, EndFrame
 import structlog
 
 

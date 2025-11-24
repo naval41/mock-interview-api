@@ -30,7 +30,6 @@ class GoogleLLM(BaseLLM):
         Returns:
             FrameProcessor configured for Google LLM
         """
-        from pipecat.processors.frame_processor import FrameProcessor
 
         # Use custom instructions if provided, otherwise use default
         if self.custom_instructions:

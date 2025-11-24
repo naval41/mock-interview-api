@@ -2,7 +2,6 @@
 Processors service for creating and managing processor implementations.
 """
 
-from typing import List
 from app.interview_playground.processors.base_processor import BaseProcessor
 from app.interview_playground.processors.code_context_processor import CodeContextProcessor
 from app.interview_playground.processors.design_context_processor import DesignContextProcessor
