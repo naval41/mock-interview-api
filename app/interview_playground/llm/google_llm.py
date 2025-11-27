@@ -2,6 +2,7 @@
 Google LLM implementation that extends BaseLLM.
 """
 
+from typing import Optional
 from pipecat.processors.frame_processor import FrameProcessor
 from app.interview_playground.llm.base_llm import BaseLLM
 from pipecat.services.google.llm import GoogleLLMService
@@ -12,7 +13,7 @@ logger = structlog.get_logger()
 class GoogleLLM(BaseLLM):
     """Google LLM implementation."""
     
-    def __init__(self, api_key: str, model: str = "gemini-2.0-flash", custom_instructions: str = None):
+    def __init__(self, api_key: str, model: str = "gemini-2.0-flash", custom_instructions: Optional[str] = None):
         """Initialize Google LLM.
         
         Args:

@@ -2,6 +2,7 @@
 LLM service for creating and managing LLM implementations.
 """
 
+from typing import Optional
 from app.interview_playground.llm.base_llm import BaseLLM
 from app.interview_playground.llm.google_llm import GoogleLLM
 from app.interview_playground.llm.openai_llm import OpenAILLM
@@ -21,7 +22,7 @@ class LLMService:
         self.kwargs = kwargs
         self._llm_instance = None
         
-    def create_google(self, api_key: str, model: str = "gemini-2.0-flash", custom_instructions: str = None) -> BaseLLM:
+    def create_google(self, api_key: str, model: str = "gemini-2.0-flash", custom_instructions: Optional[str] = None) -> BaseLLM:
         """Create a Google LLM instance.
         
         Args:

@@ -43,6 +43,9 @@ class InterviewTimerMonitor:
         self.current_planner_duration = 0  # minutes
         self.transitions_completed = 0
         
+        # Transition lock to prevent race conditions between timer and LLM-initiated transitions
+        self._transition_lock = asyncio.Lock()
+        
         self.logger = logger.bind(
             mock_interview_id=interview_context.mock_interview_id,
             session_id=interview_context.session_id
@@ -321,27 +324,122 @@ class InterviewTimerMonitor:
     
     async def on_timer_expired(self):
         """Handle timer expiration and transition to next planner."""
-        try:
-            current_planner = self.interview_context.get_current_planner_field()
-            
-            self.logger.info("⏰ Timer expired, transitioning to next planner", 
-                           current_sequence=self.interview_context.current_workflow_step_sequence,
-                           current_planner_id=current_planner.question_id if current_planner else None,
-                           completion_time=datetime.utcnow().isoformat())
-            
-            # Trigger callback if provided
-            if self.timer_callback:
-                await self.timer_callback("timer_expired", {
-                    "completed_planner": current_planner
-                })
-            
-            await self.transition_to_next_planner()
-            
-        except Exception as e:
-            self.logger.error("Failed to handle timer expiration", error=str(e))
+        async with self._transition_lock:
+            try:
+                current_planner = self.interview_context.get_current_planner_field()
+                
+                self.logger.info("⏰ Timer expired, transitioning to next planner", 
+                               current_sequence=self.interview_context.current_workflow_step_sequence,
+                               current_planner_id=current_planner.question_id if current_planner else None,
+                               completion_time=datetime.utcnow().isoformat())
+                
+                # Trigger callback if provided
+                if self.timer_callback:
+                    await self.timer_callback("timer_expired", {
+                        "completed_planner": current_planner
+                    })
+                
+                await self.transition_to_next_planner(initiated_by="timer")
+                
+            except Exception as e:
+                self.logger.error("Failed to handle timer expiration", error=str(e))
     
-    async def transition_to_next_planner(self):
-        """Transition to the next planner field or finalize interview."""
+    def can_transition(self, candidate_interview_id: str, current_phase_sequence: int) -> bool:
+        """Validate if transition request is valid.
+        
+        Args:
+            candidate_interview_id: The candidate interview ID
+            current_phase_sequence: The current phase sequence number
+            
+        Returns:
+            True if transition is valid, False otherwise
+        """
+        # Validate candidate_interview_id matches
+        if self.interview_context.candidate_interview_id != candidate_interview_id:
+            self.logger.warning("Candidate interview ID mismatch",
+                               requested=candidate_interview_id,
+                               actual=self.interview_context.candidate_interview_id)
+            return False
+        
+        # Validate current phase sequence matches
+        if self.interview_context.current_workflow_step_sequence != current_phase_sequence:
+            self.logger.warning("Phase sequence mismatch",
+                               requested=current_phase_sequence,
+                               actual=self.interview_context.current_workflow_step_sequence)
+            return False
+        
+        # Check if there's a next phase available
+        next_planner = self.interview_context.get_next_planner_field()
+        if not next_planner:
+            self.logger.warning("No next phase available for transition")
+            return False
+        
+        return True
+    
+    async def handle_llm_initiated_transition(
+        self, 
+        candidate_interview_id: str, 
+        current_phase_sequence: int,
+        transition_reason: Optional[str] = None
+    ) -> dict:
+        """Handle phase transition initiated by LLM function call.
+        
+        Args:
+            candidate_interview_id: The candidate interview ID
+            current_phase_sequence: The current phase sequence number
+            transition_reason: Optional reason for transition
+            
+        Returns:
+            Dictionary with status and result information
+        """
+        async with self._transition_lock:
+            try:
+                # Validate the transition request
+                if not self.can_transition(candidate_interview_id, current_phase_sequence):
+                    return {
+                        "status": "error",
+                        "message": "Invalid transition request",
+                        "current_sequence": self.interview_context.current_workflow_step_sequence
+                    }
+                
+                self.logger.info("🔔 LLM initiated phase transition",
+                                candidate_interview_id=candidate_interview_id,
+                                current_phase_sequence=current_phase_sequence,
+                                transition_reason=transition_reason)
+                
+                # Cancel current timer
+                await self.stop_current_timer()
+                
+                # Execute transition
+                await self.transition_to_next_planner(initiated_by="llm")
+                
+                new_sequence = self.interview_context.current_workflow_step_sequence
+                result = {
+                    "status": "success",
+                    "message": "Phase transition completed",
+                    "new_sequence": new_sequence
+                }
+                
+                self.logger.info("✅ LLM phase transition completed",
+                                status=result.get("status"),
+                                new_sequence=new_sequence)
+                
+                return result
+                
+            except Exception as e:
+                self.logger.error("❌ Error handling LLM-initiated transition", error=str(e), exc_info=True)
+                return {
+                    "status": "error",
+                    "message": f"Internal error: {str(e)}",
+                    "current_sequence": self.interview_context.current_workflow_step_sequence
+                }
+    
+    async def transition_to_next_planner(self, initiated_by: str = "timer"):
+        """Transition to the next planner field or finalize interview.
+        
+        Args:
+            initiated_by: Who initiated the transition ("timer" or "llm")
+        """
         try:
             # Check if there's a next planner field available before incrementing sequence
             current_sequence = self.interview_context.current_workflow_step_sequence
@@ -360,7 +458,7 @@ class InterviewTimerMonitor:
                 self.transitions_completed += 1
                 
                 # Continue with next planner
-                self.logger.info("🔄 Transitioning to next planner", 
+                self.logger.info(f"🔄 Transitioning to next planner (initiated by: {initiated_by})", 
                                new_sequence=next_planner.sequence,
                                question_id=next_planner.question_id,
                                duration_minutes=next_planner.duration,
@@ -377,7 +475,8 @@ class InterviewTimerMonitor:
                 if self.timer_callback:
                     await self.timer_callback("planner_transitioned", {
                         "new_planner": next_planner,
-                        "transition_count": self.transitions_completed
+                        "transition_count": self.transitions_completed,
+                        "initiated_by": initiated_by
                     })
                 
                 # Send SSE notification for phase change

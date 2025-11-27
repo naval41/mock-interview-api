@@ -4,6 +4,8 @@ Mock Interview Bot that coordinates all pipecat components for interview session
 
 from typing import Optional, Any, Dict, List, cast
 from pipecat.processors.aggregators.llm_response import LLMUserAggregatorParams
+from pipecat.adapters.schemas.function_schema import FunctionSchema
+from pipecat.adapters.schemas.tools_schema import ToolsSchema
 import structlog
 from pipecat.audio.vad.vad_analyzer import VADParams
 from app.core.config import settings
@@ -281,6 +283,15 @@ class InterviewBot:
                 )
                 self.llm_service = llm_service.setup_processor()
                 
+                # Register function handler (tools will be passed through context)
+                if self.interview_context:
+                    self.llm_service.register_function(
+                        "transition_to_next_phase",
+                        self._handle_phase_transition_function,
+                        cancel_on_interruption=False  # Don't cancel on interruption
+                    )
+                    self.logger.info("🔧 Registered phase transition function with LLM service")
+                
                 if initial_instructions:
                     self.logger.info("🤖 LLM service setup completed with initial planner instructions", 
                                    instructions_length=len(initial_instructions))
@@ -332,18 +343,28 @@ class InterviewBot:
     async def _setup_context_aggregator(self):
         """Setup context aggregator for conversation memory."""
         try:
-        
-            context = OpenAILLMContext([
-                {
-                    "role": "user",
-                    "content": "Start by greeting the user warmly and introducing yourself.",
-                }
-            ])
+            # Create context with tools if available
+            tools_schema = self._create_tools_schema()
+            
+            if tools_schema:
+                context = OpenAILLMContext([
+                    {
+                        "role": "user",
+                        "content": "Start by greeting the user warmly and introducing yourself.",
+                    }
+                ], tools=tools_schema)
+                self.logger.info("📚 Context aggregator setup completed with phase transition function")
+            else:
+                context = OpenAILLMContext([
+                    {
+                        "role": "user",
+                        "content": "Start by greeting the user warmly and introducing yourself.",
+                    }
+                ])
+                self.logger.info("📚 Context aggregator setup completed")
             
             self.context_aggregator = self.llm_service.create_context_aggregator(context, 
             user_params=LLMUserAggregatorParams(enable_emulated_vad_interruptions=True))
-            
-            self.logger.info("📚 Context aggregator setup completed")
                 
         except Exception as e:
             self.logger.error(f"Failed to setup context aggregator: {e}")
@@ -525,6 +546,9 @@ class InterviewBot:
         if not self.interview_context:
             return instructions
 
+        # Get function calling guidance
+        function_calling_guidance = self._get_function_calling_guidance()
+
         session_info = f"""
 --- INTERVIEW SESSION CONTEXT ---
 
@@ -533,6 +557,9 @@ Session ID: {self.interview_context.session_id}
 Current Phase: {planner_field.sequence + 1} of {len(self.interview_context.planner_fields)}
 Phase Duration: {planner_field.duration} minutes
 Question ID: {planner_field.question_id}
+Candidate Interview ID: {self.interview_context.candidate_interview_id}
+
+{function_calling_guidance}
 
 --- PHASE INSTRUCTIONS ---
 
@@ -543,6 +570,156 @@ Question ID: {planner_field.question_id}
 Please begin the interview following these specific instructions for this phase.
 """
         return session_info
+    
+    def _create_phase_transition_function_schema(self) -> Optional[FunctionSchema]:
+        """Create the function schema for phase transition using Pipecat's FunctionSchema.
+        
+        Returns:
+            FunctionSchema instance, or None if interview context not available
+        """
+        if not self.interview_context:
+            return None
+        
+        return FunctionSchema(
+            name="transition_to_next_phase",
+            description=(
+                "Transition the interview to the next phase when the current phase objectives are complete. "
+                "Use this when you have finished the behavioral questions, completed the coding problem discussion, "
+                "or reached a natural transition point before the timer expires."
+            ),
+            properties={
+                "candidate_interview_id": {
+                    "type": "string",
+                    "description": "The unique identifier for this candidate interview session"
+                },
+                "current_phase_sequence": {
+                    "type": "integer",
+                    "description": "The current phase sequence number (0-indexed). This should match the current phase you are in."
+                },
+                "transition_reason": {
+                    "type": "string",
+                    "enum": ["objectives_complete", "candidate_ready", "natural_breakpoint", "other"],
+                    "description": (
+                        "Reason for transitioning: 'objectives_complete' when phase goals are met, "
+                        "'candidate_ready' when candidate is ready to move on, 'natural_breakpoint' at a good stopping point, "
+                        "'other' for other reasons"
+                    )
+                }
+            },
+            required=["candidate_interview_id", "current_phase_sequence"]
+        )
+    
+    def _create_tools_schema(self) -> Optional[ToolsSchema]:
+        """Create ToolsSchema with phase transition function.
+        
+        Returns:
+            ToolsSchema instance, or None if interview context not available
+        """
+        function_schema = self._create_phase_transition_function_schema()
+        if not function_schema:
+            return None
+        
+        return ToolsSchema(standard_tools=[function_schema])
+    
+    def _get_function_calling_guidance(self) -> str:
+        """Get guidance text about phase transition function calling.
+        
+        Returns:
+            Guidance text string
+        """
+        if not self.interview_context:
+            return ""
+        
+        return f"""
+--- PHASE TRANSITION FUNCTION ---
+
+You have access to a function called `transition_to_next_phase` that allows you to proactively move to the next interview phase when appropriate.
+
+**When to use this function:**
+- When you have completed all objectives for the current phase (e.g., asked all behavioral questions, completed coding problem discussion)
+- When the candidate has provided sufficient responses and you're ready to move forward
+- When you reach a natural breakpoint in the conversation before the timer expires
+- When you determine that continuing the current phase would be redundant or unproductive
+
+**When NOT to use this function:**
+- If the timer is about to expire (let the timer handle the transition)
+- If you haven't completed the phase objectives yet
+- If the candidate is still actively working on a problem or question
+
+**How to use:**
+Call `transition_to_next_phase` with:
+- `candidate_interview_id`: "{self.interview_context.candidate_interview_id}"
+- `current_phase_sequence`: {self.interview_context.current_workflow_step_sequence}
+- `transition_reason`: One of "objectives_complete", "candidate_ready", "natural_breakpoint", or "other"
+
+**Important Notes:**
+- The timer will still automatically transition phases if you don't call this function
+- Only call this function when you genuinely believe the phase objectives are complete
+- Be thoughtful about timing - don't rush transitions, but also don't unnecessarily extend phases
+- After calling this function, you will receive new instructions for the next phase
+
+--- END FUNCTION GUIDANCE ---
+"""
+    
+    async def _handle_phase_transition_function(self, params):
+        """
+        Handle phase transition function call from LLM.
+        
+        Args:
+            params: FunctionCallParams object containing function call details
+        """
+        try:
+            # Extract arguments
+            arguments = params.arguments
+            candidate_interview_id = arguments.get("candidate_interview_id")
+            current_phase_sequence = arguments.get("current_phase_sequence")
+            transition_reason = arguments.get("transition_reason", "other")
+            
+            self.logger.info("🔔 LLM initiated phase transition",
+                            candidate_interview_id=candidate_interview_id,
+                            current_phase_sequence=current_phase_sequence,
+                            transition_reason=transition_reason)
+            
+            # Validate we have required parameters
+            if not candidate_interview_id or current_phase_sequence is None:
+                error_msg = "Missing required parameters: candidate_interview_id and current_phase_sequence are required"
+                self.logger.error(error_msg)
+                await params.result_callback({
+                    "status": "error",
+                    "message": error_msg
+                })
+                return
+            
+            # Call timer monitor to handle transition
+            if not self.timer_monitor:
+                error_msg = "Timer monitor not available"
+                self.logger.error(error_msg)
+                await params.result_callback({
+                    "status": "error",
+                    "message": error_msg
+                })
+                return
+            
+            # Execute transition
+            result = await self.timer_monitor.handle_llm_initiated_transition(
+                candidate_interview_id=candidate_interview_id,
+                current_phase_sequence=current_phase_sequence,
+                transition_reason=transition_reason
+            )
+            
+            # Return result to LLM
+            await params.result_callback(result)
+            
+            self.logger.info("✅ LLM phase transition completed",
+                            status=result.get("status"),
+                            new_sequence=result.get("new_sequence"))
+            
+        except Exception as e:
+            self.logger.error("❌ Error handling phase transition function", error=str(e), exc_info=True)
+            await params.result_callback({
+                "status": "error",
+                "message": f"Internal error: {str(e)}"
+            })
     
     async def _on_timer_event(self, event_type: str, event_data: dict):
         """Handle timer events from the timer monitor.
