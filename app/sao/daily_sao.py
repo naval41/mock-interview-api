@@ -98,7 +98,7 @@ class DailySAO:
         room_name: str,
         user_id: str,
         expires_at: datetime,
-        is_owner: bool = False,
+        is_owner: bool = True,
     ) -> Dict[str, Any]:
         """Create a Daily.co meeting token for the given room."""
         payload = {

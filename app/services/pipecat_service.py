@@ -352,35 +352,40 @@ class PipecatInterviewService:
     async def close_connection(self, room_id: str) -> bool:
         """Close a specific connection and clean up all resources."""
         try:
-            if room_id not in self.connections:
-                logger.warning(f"Connection not found for room_id: {room_id}")
+            logger.info(f"In Service for close connection : {room_id}")
+            
+            # Check if bot instance exists
+            if room_id not in self.bot_instances:
+                logger.info(f"Connection not found for room_id: {room_id}")
                 return False
             
-            # Get the connection before cleanup
-            connection = self.connections[room_id]
+            # Get bot instance and task BEFORE removing from bot_instances
+            bot_info = self.bot_instances[room_id]
+            bot = bot_info.get("bot")
+            bot_task = bot_info.get("task")
             
-            # Stop the bot task first if it exists
-            if room_id in self.bot_instances:
-                bot_info = self.bot_instances[room_id]
-                bot_task = bot_info.get("task")
-                if bot_task and not bot_task.done():
-                    logger.info(f"Cancelling bot task for room_id: {room_id}")
-                    bot_task.cancel()
-                    try:
-                        await bot_task
-                    except asyncio.CancelledError:
-                        logger.info(f"Bot task cancelled successfully for room_id: {room_id}")
-                
-                # Clean up bot instance
-                self.bot_instances.pop(room_id, None)
-                logger.info(f"Bot instance cleaned up for room_id: {room_id}")
+            # STEP 1: Stop the bot properly (this stops the timer and cleans up)
+            if bot:
+                try:
+                    logger.info(f"Stopping bot for room_id: {room_id}")
+                    await bot.stop()  # This will stop the timer via timer_monitor.stop_current_timer()
+                    logger.info(f"Bot stopped successfully for room_id: {room_id}")
+                except Exception as e:
+                    logger.error(f"Error stopping bot for room_id {room_id}: {e}")
+                    # Continue with cleanup even if stop() fails
             
-            # Remove from connections map BEFORE disconnecting
-            # This prevents the event handler from trying to clean up
-            self.connections.pop(room_id, None)
+            # STEP 2: Cancel the bot task if it's still running
+            if bot_task and not bot_task.done():
+                logger.info(f"Cancelling bot task for room_id: {room_id}")
+                bot_task.cancel()
+                try:
+                    await bot_task
+                except asyncio.CancelledError:
+                    logger.info(f"Bot task cancelled successfully for room_id: {room_id}")
             
-            # Disconnect the WebRTC connection (this triggers the "closed" event)
-            await connection.disconnect()
+            # STEP 3: Clean up bot instance
+            self.bot_instances.pop(room_id, None)
+            logger.info(f"Bot instance cleaned up for room_id: {room_id}")
             
             logger.info(f"✅ All resources cleaned up successfully for room_id: {room_id}")
             return True

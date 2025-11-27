@@ -243,7 +243,7 @@ async def handle_webrtc_offer(
             detail="Failed to establish WebRTC connection"
         )
 
-@router.delete("/close-interview/{room_id}")
+@router.delete("/close-connection/{room_id}")
 async def close_connection(
     room_id: str
 ):
@@ -256,6 +256,7 @@ async def close_connection(
         # Close the connection
         success = await pipecat_service.close_connection(room_id)
         
+        logger.info(f"Closing success : {success}")
         if success:
             return {"success": True, "message": f"Connection closed for room {room_id}"}
         else:
