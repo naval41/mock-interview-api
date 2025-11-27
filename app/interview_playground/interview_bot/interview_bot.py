@@ -721,6 +721,85 @@ Call `transition_to_next_phase` with:
                 "message": f"Internal error: {str(e)}"
             })
     
+    async def _execute_completion_workflow(self):
+        """Execute interview completion workflow (idempotent).
+        
+        This method handles:
+        - Moving interview to Review_In_Progress state
+        - Sending SQS notification
+        - Collecting session metrics
+        
+        Safe to call multiple times - will only execute once per interview.
+        """
+        try:
+            # Guard: Check if already executed (optional - can be removed if not needed)
+            if hasattr(self, '_completion_workflow_executed') and self._completion_workflow_executed:
+                self.logger.info("Completion workflow already executed, skipping")
+                return
+            
+            # Log interview context status for debugging
+            self.logger.info("🔍 Checking interview context for completion workflow",
+                           has_interview_context=self.interview_context is not None,
+                           candidate_interview_id=self.interview_context.candidate_interview_id if self.interview_context else None)
+            
+            # Mark interview as completed in database and send SQS notification
+            if self.interview_context:
+                self.logger.info("🚀 Starting interview completion workflow",
+                               candidate_interview_id=self.interview_context.candidate_interview_id)
+                try:
+                    # Get session duration from context if available
+                    session_duration = 0
+                    transitions_completed = 0
+                    total_planner_fields = 0
+                    
+                    if hasattr(self.interview_context, 'get_session_duration'):
+                        session_duration = self.interview_context.get_session_duration()
+                    
+                    if hasattr(self.interview_context, 'planner_fields'):
+                        total_planner_fields = len(self.interview_context.planner_fields)
+                    
+                    if self.timer_monitor:
+                        transitions_completed = getattr(self.timer_monitor, 'transitions_completed', 0)
+                    
+                    self.logger.info("📊 Session metrics collected",
+                                   session_duration=session_duration,
+                                   transitions_completed=transitions_completed,
+                                   total_planner_fields=total_planner_fields)
+                    
+                    completion_result = await interview_completion_service.complete_interview(
+                        candidate_interview_id=self.interview_context.candidate_interview_id,
+                        completion_reason=CompletionReason.MANUAL_DISCONNECT,
+                        session_duration_seconds=session_duration,
+                        total_planner_fields=total_planner_fields,
+                        transitions_completed=transitions_completed,
+                        additional_metadata={
+                            "mock_interview_id": self.interview_context.mock_interview_id,
+                            "session_id": self.interview_context.session_id,
+                            "room_id": self.room_id
+                        }
+                    )
+                    
+                    self.logger.info("Interview completion workflow executed",
+                                   database_updated=completion_result.get("database_updated"),
+                                   notification_sent=completion_result.get("notification_sent"),
+                                   candidate_interview_id=self.interview_context.candidate_interview_id)
+                    
+                    # Mark as executed to prevent duplicate calls
+                    self._completion_workflow_executed = True
+                    
+                except Exception as completion_error:
+                    self.logger.error("❌ Failed to execute completion workflow",
+                                    error=str(completion_error),
+                                    error_type=type(completion_error).__name__,
+                                    candidate_interview_id=self.interview_context.candidate_interview_id if self.interview_context else "unknown",
+                                    exc_info=True)
+                    # Don't mark as executed if it failed - allow retry
+            else:
+                self.logger.warning("⚠️ No interview context found - skipping completion workflow")
+                
+        except Exception as e:
+            self.logger.error(f"Error executing completion workflow: {e}", exc_info=True)
+    
     async def _on_timer_event(self, event_type: str, event_data: dict):
         """Handle timer events from the timer monitor.
         
@@ -817,62 +896,8 @@ Call `transition_to_next_phase` with:
             
             # Cleanup without closing transport again (already disconnected)
             try:
-                # Log interview context status for debugging
-                self.logger.info("🔍 Checking interview context for completion workflow",
-                               has_interview_context=self.interview_context is not None,
-                               candidate_interview_id=self.interview_context.candidate_interview_id if self.interview_context else None)
-                
-                # Mark interview as completed in database and send SQS notification
-                if self.interview_context:
-                    self.logger.info("🚀 Starting interview completion workflow on disconnect",
-                                   candidate_interview_id=self.interview_context.candidate_interview_id)
-                    try:
-                        # Get session duration from context if available
-                        session_duration = 0
-                        transitions_completed = 0
-                        total_planner_fields = 0
-                        
-                        if hasattr(self.interview_context, 'get_session_duration'):
-                            session_duration = self.interview_context.get_session_duration()
-                        
-                        if hasattr(self.interview_context, 'planner_fields'):
-                            total_planner_fields = len(self.interview_context.planner_fields)
-                        
-                        if self.timer_monitor:
-                            transitions_completed = getattr(self.timer_monitor, 'transitions_completed', 0)
-                        
-                        self.logger.info("📊 Session metrics collected",
-                                       session_duration=session_duration,
-                                       transitions_completed=transitions_completed,
-                                       total_planner_fields=total_planner_fields)
-                        
-                        completion_result = await interview_completion_service.complete_interview(
-                            candidate_interview_id=self.interview_context.candidate_interview_id,
-                            completion_reason=CompletionReason.MANUAL_DISCONNECT,
-                            session_duration_seconds=session_duration,
-                            total_planner_fields=total_planner_fields,
-                            transitions_completed=transitions_completed,
-                            additional_metadata={
-                                "mock_interview_id": self.interview_context.mock_interview_id,
-                                "session_id": self.interview_context.session_id,
-                                "room_id": self.room_id
-                            }
-                        )
-                        
-                        self.logger.info("Interview completion workflow executed on disconnect",
-                                       database_updated=completion_result.get("database_updated"),
-                                       notification_sent=completion_result.get("notification_sent"),
-                                       candidate_interview_id=self.interview_context.candidate_interview_id)
-                        
-                    except Exception as completion_error:
-                        self.logger.error("❌ Failed to execute completion workflow on disconnect",
-                                        error=str(completion_error),
-                                        error_type=type(completion_error).__name__,
-                                        candidate_interview_id=self.interview_context.candidate_interview_id if self.interview_context else "unknown",
-                                        exc_info=True)
-                        # Continue with other cleanup even if completion fails
-                else:
-                    self.logger.warning("⚠️ No interview context found - skipping completion workflow")
+                # Execute completion workflow (moved to separate method)
+                await self._execute_completion_workflow()
                 
                 # Stop timer monitor
                 if self.timer_monitor:

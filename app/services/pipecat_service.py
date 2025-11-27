@@ -364,10 +364,12 @@ class PipecatInterviewService:
             bot = bot_info.get("bot")
             bot_task = bot_info.get("task")
             
-            # STEP 1: Stop the bot properly (this stops the timer and cleans up)
+            # STEP 1: Execute completion workflow (moves to Review_In_Progress and sends SQS)
+
             if bot:
                 try:
                     logger.info(f"Stopping bot for room_id: {room_id}")
+                    await bot._execute_completion_workflow()
                     await bot.stop()  # This will stop the timer via timer_monitor.stop_current_timer()
                     logger.info(f"Bot stopped successfully for room_id: {room_id}")
                 except Exception as e:

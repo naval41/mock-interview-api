@@ -19,7 +19,6 @@ class BaseDAO(Generic[ModelType]):
             db.add(db_obj)
             await db.commit()
             await db.refresh(db_obj)
-            logger.info(f"Created {self.model.__name__}", id=str(db_obj.id))
             return db_obj
         except Exception as e:
             await db.rollback()
