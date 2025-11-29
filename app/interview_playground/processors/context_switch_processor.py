@@ -144,7 +144,14 @@ class ContextSwitchProcessor(BaseProcessor):
         transition_message = f"""
 --- INTERVIEW PHASE TRANSITION ---
 
-Great job so far! You are now moving into Phase {planner_field.sequence + 1} of the interview.
+   
+**CRITICAL: STOP ALL DISCUSSION OF THE PREVIOUS PROBLEM IMMEDIATELY.**
+   
+You are now moving into Phase {planner_field.sequence} with a NEW problem.
+Do NOT continue discussing, asking about, or referencing the previous problem.
+Start fresh with the new problem below.
+
+Great job so far! You are now moving into Phase {planner_field.sequence} of the interview.
 
 This next phase will last approximately {planner_field.duration} minutes. Please smoothly transition your focus accordingly.
 
@@ -154,6 +161,11 @@ Then proceed conversationally, maintaining a natural and engaging tone that resp
 New Phase Instructions:
 {instructions}
 
+**STOP PREVIOUS PROBLEM DISCUSSION:**
+  - Do NOT ask about variables, code, or solutions from the previous problem
+  - Do NOT continue any questions about the previous problem
+  - Immediately start fresh with the NEW problem described below
+  - If the candidate mentions the previous problem, acknowledge briefly and redirect to the new problem
 --- END PHASE TRANSITION ---
 """
         return transition_message

@@ -585,17 +585,10 @@ Please begin the interview following these specific instructions for this phase.
             description=(
                 "Transition the interview to the next phase when the current phase objectives are complete. "
                 "Use this when you have finished the behavioral questions, completed the coding problem discussion, "
-                "or reached a natural transition point before the timer expires."
+                "or reached a natural transition point before the timer expires. "
+                "The system will automatically use the current interview context to perform the transition."
             ),
             properties={
-                "candidate_interview_id": {
-                    "type": "string",
-                    "description": "The unique identifier for this candidate interview session"
-                },
-                "current_phase_sequence": {
-                    "type": "integer",
-                    "description": "The current phase sequence number (0-indexed). This should match the current phase you are in."
-                },
                 "transition_reason": {
                     "type": "string",
                     "enum": ["objectives_complete", "candidate_ready", "natural_breakpoint", "other"],
@@ -606,7 +599,7 @@ Please begin the interview following these specific instructions for this phase.
                     )
                 }
             },
-            required=["candidate_interview_id", "current_phase_sequence"]
+            required=[]  # All parameters are optional - system uses context automatically
         )
     
     def _create_tools_schema(self) -> Optional[ToolsSchema]:
@@ -645,12 +638,18 @@ You have access to a function called `transition_to_next_phase` that allows you 
 - If the timer is about to expire (let the timer handle the transition)
 - If you haven't completed the phase objectives yet
 - If the candidate is still actively working on a problem or question
+- If less than 10% of the phase duration has elapsed
+- If the candidate just noticed a new problem was loaded (this is normal, not a signal to transition)
 
 **How to use:**
-Call `transition_to_next_phase` with:
-- `candidate_interview_id`: "{self.interview_context.candidate_interview_id}"
-- `current_phase_sequence`: {self.interview_context.current_workflow_step_sequence}
-- `transition_reason`: One of "objectives_complete", "candidate_ready", "natural_breakpoint", or "other"
+Simply call `transition_to_next_phase()` when you're ready to move to the next phase.
+Optionally, you can provide a `transition_reason`:
+- "objectives_complete" - when phase goals are met
+- "candidate_ready" - when candidate is ready to move on
+- "natural_breakpoint" - at a good stopping point
+- "other" - for other reasons
+
+The system will automatically use the current interview context to perform the transition.
 
 **Important Notes:**
 - The timer will still automatically transition phases if you don't call this function
@@ -669,26 +668,28 @@ Call `transition_to_next_phase` with:
             params: FunctionCallParams object containing function call details
         """
         try:
-            # Extract arguments
-            arguments = params.arguments
-            candidate_interview_id = arguments.get("candidate_interview_id")
-            current_phase_sequence = arguments.get("current_phase_sequence")
-            transition_reason = arguments.get("transition_reason", "other")
-            
-            self.logger.info("🔔 LLM initiated phase transition",
-                            candidate_interview_id=candidate_interview_id,
-                            current_phase_sequence=current_phase_sequence,
-                            transition_reason=transition_reason)
-            
-            # Validate we have required parameters
-            if not candidate_interview_id or current_phase_sequence is None:
-                error_msg = "Missing required parameters: candidate_interview_id and current_phase_sequence are required"
+            # Validate interview context is available
+            if not self.interview_context:
+                error_msg = "Interview context not available"
                 self.logger.error(error_msg)
                 await params.result_callback({
                     "status": "error",
                     "message": error_msg
                 })
                 return
+            
+            # Extract arguments (only transition_reason now, all other values from context)
+            arguments = params.arguments
+            transition_reason = arguments.get("transition_reason", "other")
+            
+            # Use context values instead of LLM-provided values
+            candidate_interview_id = self.interview_context.candidate_interview_id
+            current_phase_sequence = self.interview_context.current_workflow_step_sequence
+            
+            self.logger.info("🔔 LLM initiated phase transition",
+                            candidate_interview_id=candidate_interview_id,
+                            current_phase_sequence=current_phase_sequence,
+                            transition_reason=transition_reason)
             
             # Call timer monitor to handle transition
             if not self.timer_monitor:
