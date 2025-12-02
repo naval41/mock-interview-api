@@ -189,6 +189,47 @@ class CandidateInterviewService:
         finally:
             await db.close()
 
+    async def validate_interview_ownership(self, interview_id: str, user_id: str) -> None:
+        """
+        Validate that an interview exists and belongs to the specified user.
+        Raises ValueError if validation fails.
+        
+        Args:
+            interview_id: The candidate interview ID to validate
+            user_id: The user ID to validate ownership against
+            
+        Raises:
+            ValueError: If interview not found or user doesn't own it
+        """
+        db = await get_db_session()
+        try:
+            interview = await candidate_interview_dao.get_by_id(db, interview_id)
+            if not interview:
+                logger.warning("Interview not found", interview_id=interview_id, user_id=user_id)
+                raise ValueError("Candidate interview not found")
+            
+            if interview.userId != user_id:
+                logger.warning("Interview ownership validation failed", 
+                             interview_id=interview_id, 
+                             expected_user_id=user_id,
+                             actual_user_id=interview.userId)
+                raise ValueError("Not authorized to access this interview")
+            
+            logger.debug("Interview ownership validated successfully", 
+                        interview_id=interview_id, 
+                        user_id=user_id)
+            
+        except ValueError:
+            raise
+        except Exception as e:
+            logger.error("Failed to validate interview ownership", 
+                        interview_id=interview_id, 
+                        user_id=user_id, 
+                        error=str(e))
+            raise
+        finally:
+            await db.close()
+
 
 # Create a singleton instance
 candidate_interview_service = CandidateInterviewService()

@@ -2,11 +2,13 @@
 Interview controller with pipecat integration for real-time voice interviews.
 """
 
-from fastapi import APIRouter, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel
+from app.core.security import validate_request
 from app.services.pipecat_service import pipecat_service
 from app.services.interview_context_service import interview_context_service
 from app.services.session_details_service import session_details_service
+from app.services.candidate_interview_service import candidate_interview_service
 import structlog
 from datetime import datetime
 
@@ -35,8 +37,41 @@ class StartInterviewSessionResponse(BaseModel):
     room_id: str
 
 
+async def validate_interview_access(room_id: str, user_id: str) -> None:
+    """
+    Common validation method to verify interview access.
+    Validates that room_id and user_id are provided, and that the interview
+    exists and belongs to the authenticated user.
+    
+    Args:
+        room_id: The candidate interview ID (room ID)
+        user_id: The authenticated user ID
+        
+    Raises:
+        HTTPException: If validation fails (400 for missing params, 403 for access denied)
+    """
+    if not room_id or not user_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="room_id and user_id are required",
+        )
+    
+    # Validate that the interview exists and belongs to the user
+    try:
+        await candidate_interview_service.validate_interview_ownership(room_id, user_id)
+    except ValueError as e:
+        logger.warning("Interview ownership validation failed", 
+                     room_id=room_id, 
+                     user_id=user_id, 
+                     error=str(e))
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=str(e),
+        )
+
+
 @router.post("/create-room", response_model=CreateRoomResponse)
-async def create_room(payload: CreateRoomRequest):
+async def create_room(payload: CreateRoomRequest, user: dict = Depends(validate_request)):
     """
     Create a new interview room and return encrypted credentials.
 
@@ -45,15 +80,12 @@ async def create_room(payload: CreateRoomRequest):
     """
     try:
         room_id = payload.candidate_interview_id.strip()
-        user_id = payload.user_id.strip()
+        user_id = user.get("user_id")
 
         logger.info("Creating room", room_id=room_id, user_id=user_id)
 
-        if not room_id or not user_id:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="room_id and user_id are required",
-            )
+        # Validate interview access (checks required params and ownership)
+        await validate_interview_access(room_id, user_id)
 
         result = await pipecat_service.create_interview_room(
             room_id=room_id,
@@ -115,143 +147,21 @@ async def start_interview(candidate_interview_id: str, user_id: str):
             detail="Unable to start interview session",
         )
 
-@router.post("/start-interview-session", response_model=StartInterviewSessionResponse)
-async def start_interview_session(payload: StartInterviewSessionRequest):
-    """
-    Decrypt supplied credentials and start an interview session.
-    """
-    candidate_interview_id = payload.candidateInterviewId.strip()
-    user_id = payload.user_id.strip()
-
-    if not candidate_interview_id or not user_id:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="room_id and user_id are required",
-        )
-
-    try:
-        session_details = await session_details_service.get_by_candidate_interview_id(candidate_interview_id)
-
-        if not session_details or not session_details.roomUrl or not session_details.roomToken:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Session details not found for room_id",
-            )
-
-        interview_context = await interview_context_service.build_interview_context(
-            candidate_interview_id=candidate_interview_id,
-            user_id=user_id,
-            session_id=candidate_interview_id,
-        )
-
-        started = await pipecat_service.start_interview_session(
-            room_id=candidate_interview_id,
-            token=session_details.roomToken,
-            user_id=user_id,
-            interview_context=interview_context,
-            room_url=session_details.roomUrl,
-        )
-        return StartInterviewSessionResponse(success=started, room_id=candidate_interview_id)
-    except HTTPException:
-        raise
-    except Exception as exc:
-        logger.error("Failed to start interview session", error=str(exc))
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Unable to start interview session",
-        )
-
-@router.post("/offer")
-async def handle_webrtc_offer(
-    request: Request,
-):
-    """
-    Handle WebRTC offer and establish connection for interview.
-    This is the equivalent of the /api/offer endpoint from the reference implementation.
-    """
-    try:
-        logger.info(f"Received offer request: {request}")
-        
-        query_params = request.query_params
-        room_id = query_params.get("room_id")
-        user_id = query_params.get("user_id")
-        mock_interview_id = query_params.get("mock_interview_id")
-
-        if not room_id:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Missing required query parameter: room_id"
-            )
-        
-        body = await request.json()
-        
-        logger.info(f"Processing WebRTC offer for room {room_id}, user {user_id}, mock_interview_id {mock_interview_id}")
-
-        existing_connection = bool(room_id and room_id in pipecat_service.connections)
-
-        # Build interview context if this is a new connection
-        interview_context = None
-        if not existing_connection:
-            if not mock_interview_id or not user_id:
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="mock_interview_id and user_id are required to start a new interview session"
-                )
-            try:
-                # Create interview context from mock_interview_id and user_id
-                interview_context = await interview_context_service.build_interview_context(
-                    candidate_interview_id=mock_interview_id,
-                    user_id=user_id,
-                    session_id=room_id  # Use room_id as session_id
-                )
-                logger.info(f"Built interview context for room {room_id}", 
-                           context_summary=interview_context.get_context_summary())
-            except ValueError as e:
-                logger.error(f"Failed to build interview context: {e}")
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail=f"Invalid interview setup: {str(e)}"
-                )
-            except Exception as e:
-                logger.error(f"Unexpected error building interview context: {e}")
-                raise HTTPException(
-                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                    detail="Failed to initialize interview context"
-                )
-
-        answer = await pipecat_service.create_connection(
-            room_id=room_id,
-            sdp=body["sdp"],
-            sdp_type=body["type"]
-        )
-
-        if not existing_connection:
-            await pipecat_service.start_interview_bot(
-                room_id=room_id,
-                interview_context=interview_context
-            )
-            logger.info(f"New WebRTC connection established for room {room_id}")
-        else:
-            logger.info(f"WebRTC connection renegotiated for room {room_id}")
-
-        return answer
-        
-    except Exception as e:
-        logger.error(f"Failed to handle WebRTC offer: {e}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to establish WebRTC connection"
-        )
-
 @router.delete("/close-connection/{room_id}")
 async def close_connection(
-    room_id: str
+    room_id: str,
+    user: dict = Depends(validate_request)
 ):
     """
     Close a specific interview connection.
     """
     try:
         logger.info(f"Closing connection for room {room_id}")
+
+        user_id = user.get("user_id")
+        
+        # Validate interview access (checks required params and ownership)
+        await validate_interview_access(room_id, user_id)
         
         # Close the connection
         success = await pipecat_service.close_connection(room_id)
