@@ -583,12 +583,13 @@ class InterviewTimerMonitor:
         # Create task properties with question ID
         task_properties = TaskProperties(question_id=planner_field.question_id)
         
-        # Create TaskEvent
+        # Create TaskEvent with tool_properties from planner_field
         task_event = TaskEvent(
             task_type=task_type,
             tool_name=planner_field.tool_name or [],
             task_definition=planner_field.question_text,
-            task_properties=task_properties
+            task_properties=task_properties,
+            tool_properties=planner_field.tool_properties  # Include tool_properties from planner_field
         )
         
         return task_event

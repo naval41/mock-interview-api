@@ -6,6 +6,7 @@ This entity represents the structured data sent via Server-Sent Events during in
 from typing import Optional, List, Dict, Any
 from dataclasses import dataclass
 from app.models.enums import WorkflowStepType, ToolName
+from app.entities.tool_properties import ToolProperties
 
 
 @dataclass
@@ -44,12 +45,14 @@ class TaskEvent:
     - toolName: List of tools available for this task (from ToolName enum)
     - task_definition: Optional text containing question or problem statement
     - task_properties: Task-specific properties including question ID
+    - tool_properties: Tool-specific properties (e.g., languages list)
     """
     
     task_type: WorkflowStepType
     tool_name: List[ToolName]
     task_definition: Optional[str] = None
     task_properties: Optional[TaskProperties] = None
+    tool_properties: Optional[ToolProperties] = None
     
     def __post_init__(self):
         """Validate and set default values after initialization"""
@@ -74,7 +77,8 @@ class TaskEvent:
             "taskType": self.task_type.value,
             "toolName": [tool.value for tool in self.tool_name],
             "task_definition": self.task_definition,
-            "task_properties": self.task_properties.to_dict() if self.task_properties else {}
+            "task_properties": self.task_properties.to_dict() if self.task_properties else {},
+            "tool_properties": self.tool_properties.to_dict() if self.tool_properties else {}
         }
     
     @classmethod
@@ -91,11 +95,17 @@ class TaskEvent:
         if "task_properties" in data and data["task_properties"]:
             task_properties = TaskProperties.from_dict(data["task_properties"])
         
+        # Handle tool_properties
+        tool_properties = None
+        if "tool_properties" in data and data["tool_properties"]:
+            tool_properties = ToolProperties.from_dict(data["tool_properties"])
+        
         return cls(
             task_type=task_type,
             tool_name=tool_name,
             task_definition=data.get("task_definition"),
-            task_properties=task_properties
+            task_properties=task_properties,
+            tool_properties=tool_properties
         )
     
     def add_tool(self, tool: ToolName) -> None:
@@ -128,4 +138,5 @@ class TaskEvent:
         return (f"TaskEvent(task_type={self.task_type.value}, "
                 f"tool_name={[tool.value for tool in self.tool_name]}, "
                 f"task_definition='{self.task_definition}', "
-                f"task_properties={self.task_properties})")
+                f"task_properties={self.task_properties}, "
+                f"tool_properties={self.tool_properties})")

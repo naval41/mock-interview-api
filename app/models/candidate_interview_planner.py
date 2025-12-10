@@ -1,6 +1,7 @@
 from sqlmodel import SQLModel, Field, Relationship
-from typing import Optional, List
+from typing import Optional, List, Dict, Any
 from datetime import datetime
+from sqlalchemy import Column, JSON
 import uuid
 from .enums import ToolName
 
@@ -15,6 +16,11 @@ class CandidateInterviewPlannerBase(SQLModel):
     sequence: int = Field(description="Order/sequence of this planner in the interview workflow")
     duration: int = Field(default=0, description="Duration in minutes for this planner step")
     toolName: Optional[str] = Field(None, description="Tool name for this planner step")
+    toolsProperties: Optional[Dict[str, Any]] = Field(
+        default=None,
+        sa_column=Column(JSON, nullable=True),
+        description="Tool-specific JSONB properties (e.g., languages list)"
+    )
     answerId: Optional[str] = None
 
 
