@@ -144,28 +144,28 @@ class ContextSwitchProcessor(BaseProcessor):
         transition_message = f"""
 --- INTERVIEW PHASE TRANSITION ---
 
-   
 **CRITICAL: STOP ALL DISCUSSION OF THE PREVIOUS PROBLEM IMMEDIATELY.**
-   
+
 You are now moving into Phase {planner_field.sequence} with a NEW problem.
 Do NOT continue discussing, asking about, or referencing the previous problem.
 Start fresh with the new problem below.
 
-Great job so far! You are now moving into Phase {planner_field.sequence} of the interview.
+This next phase will last approximately {planner_field.duration} minutes.
 
-This next phase will last approximately {planner_field.duration} minutes. Please smoothly transition your focus accordingly.
-
-Before starting, briefly acknowledge this transition and confirm understanding of the new instructions below.  
-Then proceed conversationally, maintaining a natural and engaging tone that respects the candidate’s experience and interview timing.
+**TRANSITION BEHAVIOR:**
+- Make ONE brief, natural transition statement (e.g., "Let's move on to the next part")
+- Do NOT repeat transition announcements multiple times in your response
+- Do NOT mention the phase number, duration, or explicitly say "transition" or "transitioning"
+- After your single brief transition statement, immediately proceed to introduce the new problem/topic
 
 New Phase Instructions:
 {instructions}
 
 **STOP PREVIOUS PROBLEM DISCUSSION:**
-  - Do NOT ask about variables, code, or solutions from the previous problem
-  - Do NOT continue any questions about the previous problem
-  - Immediately start fresh with the NEW problem described below
-  - If the candidate mentions the previous problem, acknowledge briefly and redirect to the new problem
+- Do NOT ask about variables, code, or solutions from the previous problem
+- Do NOT continue any questions about the previous problem
+- Immediately start fresh with the NEW problem described below
+- If the candidate mentions the previous problem, acknowledge briefly and redirect to the new problem
 --- END PHASE TRANSITION ---
 """
         return transition_message
@@ -215,7 +215,9 @@ Do not continue with any new problems, questions, or technical discussions.
                 "content": message
             }
         ]
-        return LLMMessagesAppendFrame(messages=messages, run_llm=True)
+        # run_llm=False because during LLM-initiated transitions, the LLM is already generating
+        # Setting run_llm=True would cause duplicate responses
+        return LLMMessagesAppendFrame(messages=messages, run_llm=False)
     
     def _create_llm_context_frame_for_bot_interruption(self, message: str) -> InterviewClosureFrame:
         """Create InterviewClosureFrame for interview closure.

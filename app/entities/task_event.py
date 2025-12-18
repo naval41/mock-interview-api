@@ -6,7 +6,6 @@ This entity represents the structured data sent via Server-Sent Events during in
 from typing import Optional, List, Dict, Any
 from dataclasses import dataclass
 from app.models.enums import WorkflowStepType, ToolName
-from app.entities.tool_properties import ToolProperties
 
 
 @dataclass
@@ -45,14 +44,14 @@ class TaskEvent:
     - toolName: List of tools available for this task (from ToolName enum)
     - task_definition: Optional text containing question or problem statement
     - task_properties: Task-specific properties including question ID
-    - tool_properties: Tool-specific properties (e.g., languages list)
+    - tool_properties: Tool-specific properties as raw JSON (pass-through from database)
     """
     
     task_type: WorkflowStepType
     tool_name: List[ToolName]
     task_definition: Optional[str] = None
     task_properties: Optional[TaskProperties] = None
-    tool_properties: Optional[ToolProperties] = None
+    tool_properties: Optional[Dict[str, Any]] = None
     
     def __post_init__(self):
         """Validate and set default values after initialization"""
@@ -78,7 +77,7 @@ class TaskEvent:
             "toolName": [tool.value for tool in self.tool_name],
             "task_definition": self.task_definition,
             "task_properties": self.task_properties.to_dict() if self.task_properties else {},
-            "tool_properties": self.tool_properties.to_dict() if self.tool_properties else {}
+            "tool_properties": self.tool_properties if self.tool_properties else {}
         }
     
     @classmethod
@@ -95,10 +94,10 @@ class TaskEvent:
         if "task_properties" in data and data["task_properties"]:
             task_properties = TaskProperties.from_dict(data["task_properties"])
         
-        # Handle tool_properties
+        # Handle tool_properties - pass through as dict (no parsing needed)
         tool_properties = None
-        if "tool_properties" in data and data["tool_properties"]:
-            tool_properties = ToolProperties.from_dict(data["tool_properties"])
+        if "tool_properties" in data and isinstance(data.get("tool_properties"), dict):
+            tool_properties = data["tool_properties"]
         
         return cls(
             task_type=task_type,

@@ -3,11 +3,10 @@ InterviewContext entity for tracking interview session state and context.
 This entity represents the current state of an ongoing interview session.
 """
 
-from typing import Optional, List
+from typing import Optional, List, Dict, Any
 from dataclasses import dataclass, field
 from datetime import datetime, time
 from app.models.enums import ToolName, WorkflowStepType, QuestionType
-from app.entities.tool_properties import ToolProperties
 
 
 def parse_tool_names_from_string(tool_string: Optional[str]) -> List[ToolName]:
@@ -64,7 +63,7 @@ class PlannerField:
     duration: int  # Duration in minutes
     question_text: Optional[str] = None  # Question text from InterviewQuestion table
     tool_name: Optional[List[ToolName]] = None  # List of tools required for this planner step
-    tool_properties: Optional[ToolProperties] = None  # Tool-specific properties (e.g., languages)
+    tool_properties: Optional[Dict[str, Any]] = None  # Tool-specific properties as raw JSON (pass-through from database)
     start_time: Optional[time] = None
     end_time: Optional[time] = None
     sequence: int = 0
@@ -95,7 +94,7 @@ class PlannerField:
             "duration": self.duration,
             "question_text": self.question_text,
             "tool_name": [tool.value for tool in self.tool_name] if self.tool_name else [],
-            "tool_properties": self.tool_properties.to_dict() if self.tool_properties else {},
+            "tool_properties": self.tool_properties if self.tool_properties else {},
             "start_time": self.start_time.isoformat() if self.start_time else None,
             "end_time": self.end_time.isoformat() if self.end_time else None,
             "sequence": self.sequence
@@ -116,13 +115,8 @@ class PlannerField:
         elif 'tool_name' not in data:
             data['tool_name'] = []
         
-        # Handle tool_properties field - convert from dict to ToolProperties
-        if 'tool_properties' in data and data['tool_properties']:
-            if isinstance(data['tool_properties'], dict):
-                data['tool_properties'] = ToolProperties.from_dict(data['tool_properties'])
-            else:
-                data['tool_properties'] = None
-        elif 'tool_properties' not in data:
+        # Handle tool_properties field - pass through as dict (no parsing needed)
+        if 'tool_properties' not in data or not isinstance(data.get('tool_properties'), dict):
             data['tool_properties'] = None
         
         return cls(**data)

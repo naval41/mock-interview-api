@@ -11,7 +11,6 @@ from app.core.database import get_db_session
 from app.dao.candidate_interview_dao import candidate_interview_dao
 from app.dao.candidate_interview_planner_dao import candidate_interview_planner_dao
 from app.entities.interview_context import InterviewContext, PlannerField
-from app.entities.tool_properties import ToolProperties
 from app.models.interview_question import InterviewQuestion
 import structlog
 import uuid
@@ -84,17 +83,8 @@ class InterviewContextService:
                 # Set tool names directly from database toolName field
                 planner_field.set_tools_from_string(planner.toolName)
                 
-                # Parse and set tool_properties from JSONB field
-                if planner.toolsProperties:
-                    try:
-                        planner_field.tool_properties = ToolProperties.from_dict(planner.toolsProperties)
-                    except Exception as e:
-                        logger.warning("Failed to parse toolsProperties", 
-                                     planner_id=planner.id, 
-                                     toolsProperties=planner.toolsProperties,
-                                     error=str(e))
-                        # Continue with None tool_properties if parsing fails
-                        planner_field.tool_properties = None
+                # Pass through tool_properties directly from JSONB field (no parsing needed)
+                planner_field.tool_properties = planner.toolsProperties
                 
                 # Set question text from fetched interview questions
                 if planner.questionId in interview_questions:
