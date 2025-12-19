@@ -107,6 +107,43 @@ class ContextSwitchProcessor(BaseProcessor):
             self.logger.error("Failed to inject interview closure context", error=str(e))
             return False
     
+    async def inject_time_nudge_signal(self, progress_percentage: float, current_planner: PlannerField, is_final: bool = False):
+        """Inject a time-based nudge signal to LLM without triggering transition.
+        
+        Args:
+            progress_percentage: Current progress percentage (0-100)
+            current_planner: The current planner field
+            is_final: Whether this is the final nudge after timer expiration
+        """
+        try:
+            # Check if interview is already completed
+            if self._interview_completed:
+                self.logger.warning("Attempted to inject time nudge after interview completion - ignoring")
+                return False
+            
+            # Create nudge message
+            nudge_message = self._create_time_nudge_message(progress_percentage, current_planner, is_final)
+            
+            # Create LLM message frame to inject context (without triggering new response)
+            context_frame = self._create_llm_context_frame(nudge_message)
+            
+            # Push the context frame downstream to LLM
+            await self.push_frame(context_frame, FrameDirection.DOWNSTREAM)
+            
+            self.logger.info("Injected time nudge signal", 
+                           progress_percentage=progress_percentage,
+                           is_final=is_final,
+                           sequence=current_planner.sequence,
+                           question_id=current_planner.question_id)
+            
+            return True
+            
+        except Exception as e:
+            self.logger.error("Failed to inject time nudge signal", 
+                            progress_percentage=progress_percentage,
+                            error=str(e))
+            return False
+    
     def get_current_instructions(self) -> str:
         """Get the current active instructions.
         
@@ -197,6 +234,60 @@ Do not continue with any new problems, questions, or technical discussions.
 --- END INTERVIEW ---
 """
         return closure_message
+    
+    def _create_time_nudge_message(self, progress_percentage: float, current_planner: PlannerField, is_final: bool = False) -> str:
+        """Create a time-based nudge message to inform LLM about phase progress.
+        
+        Args:
+            progress_percentage: Current progress percentage (0-100)
+            current_planner: The current planner field
+            is_final: Whether this is the final nudge after timer expiration
+            
+        Returns:
+            Formatted nudge message
+        """
+        remaining_minutes = max(0, int((current_planner.duration * (100 - progress_percentage)) / 100))
+        
+        if is_final:
+            nudge_message = f"""
+--- TIME STATUS UPDATE ---
+
+**Phase Time Status:**
+- Current Phase: {current_planner.sequence}
+- Phase Duration: {current_planner.duration} minutes
+- Status: Phase time has fully elapsed (100% complete)
+
+**Guidance:**
+The allocated time for this phase has been fully used. Please consider:
+- If you have completed the phase objectives, you may transition to the next phase using the `transition_to_next_phase` function
+- If you need more time to complete objectives, you may continue, but be mindful of overall interview pacing
+- This is a health signal - you control when to transition
+
+**Note:** This is an informational update. You decide when to transition based on phase completion, not time alone.
+
+--- END TIME STATUS UPDATE ---
+"""
+        else:
+            nudge_message = f"""
+--- TIME STATUS UPDATE ---
+
+**Phase Time Status:**
+- Current Phase: {current_planner.sequence}
+- Phase Duration: {current_planner.duration} minutes
+- Progress: {progress_percentage:.1f}% complete
+- Remaining Time: Approximately {remaining_minutes} minute(s)
+
+**Guidance:**
+You've used {progress_percentage:.0f}% of the allocated time for this phase. Please consider:
+- If you have completed or are close to completing the phase objectives, you may want to transition to the next phase using the `transition_to_next_phase` function
+- If you still have important objectives to cover, continue naturally but be mindful of time
+- This is a health signal to help you manage the interview pacing - you control when to transition
+
+**Note:** This is an informational update. You decide when to transition based on phase completion, not time alone.
+
+--- END TIME STATUS UPDATE ---
+"""
+        return nudge_message
     
     def _create_llm_context_frame(self, message: str) -> LLMMessagesAppendFrame:
         """Create an LLM context frame with the given message.

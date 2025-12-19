@@ -46,6 +46,10 @@ class InterviewTimerMonitor:
         # Transition lock to prevent race conditions between timer and LLM-initiated transitions
         self._transition_lock = asyncio.Lock()
         
+        # Nudge tracking for time-based signals
+        self._nudge_sent_for_current_phase = False
+        self._nudge_threshold = 0.8  # 80% threshold
+        
         self.logger = logger.bind(
             mock_interview_id=interview_context.mock_interview_id,
             session_id=interview_context.session_id
@@ -86,6 +90,8 @@ class InterviewTimerMonitor:
             self.is_running = True
             self.is_paused = False
             self.total_paused_duration = 0
+            # Reset nudge flag for new phase
+            self._nudge_sent_for_current_phase = False
             
             self.logger.info("🚀 Started planner timer", 
                            sequence=current_planner.sequence,
@@ -307,6 +313,12 @@ class InterviewTimerMonitor:
                     update_count += 1
                     status = self.get_timer_status()
                     
+                    # Check for 80% threshold and send nudge if not already sent
+                    progress = status.get("progress_percentage", 0.0)
+                    if progress >= (self._nudge_threshold * 100) and not self._nudge_sent_for_current_phase:
+                        await self._send_time_nudge_signal(progress)
+                        self._nudge_sent_for_current_phase = True
+                    
                     # Log INFO level every 30 seconds (every 3rd update), DEBUG level every 10 seconds
                     if update_count % 3 == 0:
                         self.logger.info("⏱️ Timer status update", 
@@ -323,15 +335,21 @@ class InterviewTimerMonitor:
             self.logger.error("Monitor task error", error=str(e))
     
     async def on_timer_expired(self):
-        """Handle timer expiration and transition to next planner."""
+        """Handle timer expiration - send final nudge but do not transition automatically.
+        
+        Phase transitions are now only controlled by LLM function calls.
+        """
         async with self._transition_lock:
             try:
                 current_planner = self.interview_context.get_current_planner_field()
                 
-                self.logger.info("⏰ Timer expired, transitioning to next planner", 
+                self.logger.info("⏰ Timer expired for current phase", 
                                current_sequence=self.interview_context.current_workflow_step_sequence,
                                current_planner_id=current_planner.question_id if current_planner else None,
                                completion_time=datetime.utcnow().isoformat())
+                
+                # Send final nudge signal to LLM (time has fully elapsed)
+                await self._send_time_nudge_signal(100.0, is_final=True)
                 
                 # Trigger callback if provided
                 if self.timer_callback:
@@ -339,10 +357,44 @@ class InterviewTimerMonitor:
                         "completed_planner": current_planner
                     })
                 
-                await self.transition_to_next_planner(initiated_by="timer")
+                # DO NOT transition automatically - let LLM decide via function call
+                self.logger.info("⏸️ Timer expired but not transitioning - waiting for LLM to initiate transition",
+                               current_sequence=self.interview_context.current_workflow_step_sequence)
                 
             except Exception as e:
                 self.logger.error("Failed to handle timer expiration", error=str(e))
+    
+    async def _send_time_nudge_signal(self, progress_percentage: float, is_final: bool = False):
+        """Send a time-based nudge signal to LLM without triggering transition.
+        
+        Args:
+            progress_percentage: Current progress percentage (0-100)
+            is_final: Whether this is the final nudge after timer expiration
+        """
+        try:
+            if not self.context_processor:
+                self.logger.warning("Cannot send time nudge - context processor not available")
+                return
+            
+            current_planner = self.interview_context.get_current_planner_field()
+            if not current_planner:
+                self.logger.warning("Cannot send time nudge - no current planner")
+                return
+            
+            # Inject nudge signal through context processor
+            await self.context_processor.inject_time_nudge_signal(
+                progress_percentage=progress_percentage,
+                current_planner=current_planner,
+                is_final=is_final
+            )
+            
+            self.logger.info("📢 Time nudge signal sent to LLM",
+                           progress_percentage=progress_percentage,
+                           is_final=is_final,
+                           current_sequence=current_planner.sequence)
+            
+        except Exception as e:
+            self.logger.error("Failed to send time nudge signal", error=str(e))
     
     def can_transition(self, candidate_interview_id: str, current_phase_sequence: int) -> bool:
         """Validate if transition request is valid.
