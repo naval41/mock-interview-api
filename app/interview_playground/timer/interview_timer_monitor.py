@@ -50,6 +50,9 @@ class InterviewTimerMonitor:
         self._nudge_sent_for_current_phase = False
         self._nudge_threshold = 0.8  # 80% threshold
         
+        # Track if WRAP_UP event has been sent
+        self._wrap_up_event_sent = False
+        
         self.logger = logger.bind(
             mock_interview_id=interview_context.mock_interview_id,
             session_id=interview_context.session_id
@@ -535,6 +538,13 @@ class InterviewTimerMonitor:
                 task_event = self._create_task_event_from_planner(next_planner, "phase_changed")
   
                 await self._send_sse_notification(EventType.INTERVIEW, task_event)
+                
+                # Send WRAP_UP event if this is the last phase
+                if self._is_last_phase(next_planner):
+                    self.logger.info("🎯 Entering last phase - sending WRAP_UP event",
+                                   sequence=next_planner.sequence,
+                                   total_planner_fields=len(self.interview_context.planner_fields))
+                    await self._send_wrap_up_sse_event()
             else:
                 # No more planners - finalize interview
                 self.logger.info("🏁 No more planner fields available, finalizing interview", 
@@ -544,6 +554,44 @@ class InterviewTimerMonitor:
                 
         except Exception as e:
             self.logger.error("Failed to transition to next planner", error=str(e))
+    
+    def _is_last_phase(self, planner_field: PlannerField) -> bool:
+        """Check if this is the last planner field.
+        
+        Args:
+            planner_field: The planner field to check
+            
+        Returns:
+            True if this is the last phase, False otherwise
+        """
+        if not planner_field or not self.interview_context.planner_fields:
+            return False
+        
+        max_sequence = max(pf.sequence for pf in self.interview_context.planner_fields)
+        return planner_field.sequence == max_sequence
+    
+    async def _send_wrap_up_sse_event(self):
+        """Send WRAP_UP SYSTEM event via SSE (without finalization logic).
+        
+        This method only sends the SSE event notification and does not perform
+        any completion workflow actions like database updates or SQS notifications.
+        """
+        try:
+            if self._wrap_up_event_sent:
+                self.logger.debug("WRAP_UP event already sent, skipping")
+                return
+            
+            completion_task_event = TaskEvent(
+                task_type=WorkflowStepType.WRAP_UP,
+                tool_name=[],
+                task_definition="Interview wrap-up phase",
+                task_properties=TaskProperties()
+            )
+            await self._send_sse_notification(EventType.SYSTEM, completion_task_event)
+            self._wrap_up_event_sent = True
+            self.logger.info("📤 Sent WRAP_UP SSE event")
+        except Exception as e:
+            self.logger.error("Failed to send WRAP_UP SSE event", error=str(e))
     
     async def finalize_interview(self):
         """Finalize the interview when all planners are complete."""
@@ -598,16 +646,12 @@ class InterviewTimerMonitor:
                     "session_duration_seconds": session_duration
                 })
             
-            # Send SSE notification for interview completion
-            # For system events like interview completion, create a minimal TaskEvent
-            completion_task_event = TaskEvent(
-                task_type=WorkflowStepType.WRAP_UP,
-                tool_name=[],
-                task_definition="Interview completed",
-                task_properties=TaskProperties()
-            )
-
-            await self._send_sse_notification(EventType.SYSTEM, completion_task_event)
+            # Send WRAP_UP event if not already sent (safety check)
+            # Note: WRAP_UP event should already be sent when entering the last phase,
+            # but we send it here as a fallback in case the transition was skipped
+            if not self._wrap_up_event_sent:
+                self.logger.warning("WRAP_UP event not sent during phase transition, sending now as fallback")
+                await self._send_wrap_up_sse_event()
                 
         except Exception as e:
             self.logger.error("Failed to finalize interview", error=str(e))
