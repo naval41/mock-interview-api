@@ -276,7 +276,6 @@ async def interview_events_stream(room_id: str):
         headers={
             "Cache-Control": "no-cache",
             "Connection": "keep-alive",
-            "Access-Control-Allow-Origin": "*",
-            "Access-Control-Allow-Headers": "Cache-Control"
+            # CORS headers are handled by middleware - no need to set manually
         }
     )
