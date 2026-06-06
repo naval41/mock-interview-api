@@ -15,22 +15,23 @@ class TaskProperties:
     Contains task-specific data like question ID and other relevant properties.
     """
     question_id: Optional[str] = None
-    # Additional properties can be added here as needed
-    # e.g., time_limit: Optional[int] = None
-    # e.g., difficulty_level: Optional[str] = None
-    
+    workflow_step_id: Optional[str] = None
+
     def to_dict(self) -> Dict[str, Any]:
         """Convert TaskProperties to dictionary representation"""
         result = {}
         if self.question_id is not None:
             result["questionId"] = self.question_id
+        if self.workflow_step_id is not None:
+            result["workflowStepId"] = self.workflow_step_id
         return result
-    
+
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> 'TaskProperties':
         """Create TaskProperties instance from dictionary"""
         return cls(
-            question_id=data.get("questionId")
+            question_id=data.get("questionId"),
+            workflow_step_id=data.get("workflowStepId")
         )
 
 

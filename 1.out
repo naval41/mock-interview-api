@@ -1,0 +1,298 @@
+diff --git a/.dockerignore b/.dockerignore
+index f0da78f..a419703 100644
+--- a/.dockerignore
++++ b/.dockerignore
+@@ -24,3 +24,7 @@ config/local.env.template
+ logs/
+ tmp/
+ 
++
++
++
++
+diff --git a/app/dao/session_details_dao.py b/app/dao/session_details_dao.py
+index 29fb642..0202af8 100644
+--- a/app/dao/session_details_dao.py
++++ b/app/dao/session_details_dao.py
+@@ -37,3 +37,5 @@ session_details_dao = SessionDetailsDAO()
+ 
+ 
+ 
++
++
+diff --git a/app/entities/__init__.py b/app/entities/__init__.py
+index cf6a5e8..d05ec89 100644
+--- a/app/entities/__init__.py
++++ b/app/entities/__init__.py
+@@ -5,6 +5,7 @@ Contains business logic entities that represent core domain concepts.
+ 
+ from .interview_context import InterviewContext
+ from .task_event import TaskEvent, TaskProperties
++from .tool_properties import ToolProperties
+ from .transcript_event import TranscriptEvent
+ 
+-__all__ = ["InterviewContext", "TaskEvent", "TaskProperties", "TranscriptEvent"]
++__all__ = ["InterviewContext", "TaskEvent", "TaskProperties", "ToolProperties", "TranscriptEvent"]
+diff --git a/app/entities/interview_context.py b/app/entities/interview_context.py
+index 829af93..a55f1fd 100644
+--- a/app/entities/interview_context.py
++++ b/app/entities/interview_context.py
+@@ -7,6 +7,7 @@ from typing import Optional, List
+ from dataclasses import dataclass, field
+ from datetime import datetime, time
+ from app.models.enums import ToolName, WorkflowStepType, QuestionType
++from app.entities.tool_properties import ToolProperties
+ 
+ 
+ def parse_tool_names_from_string(tool_string: Optional[str]) -> List[ToolName]:
+@@ -63,6 +64,7 @@ class PlannerField:
+     duration: int  # Duration in minutes
+     question_text: Optional[str] = None  # Question text from InterviewQuestion table
+     tool_name: Optional[List[ToolName]] = None  # List of tools required for this planner step
++    tool_properties: Optional[ToolProperties] = None  # Tool-specific properties (e.g., languages)
+     start_time: Optional[time] = None
+     end_time: Optional[time] = None
+     sequence: int = 0
+@@ -93,6 +95,7 @@ class PlannerField:
+             "duration": self.duration,
+             "question_text": self.question_text,
+             "tool_name": [tool.value for tool in self.tool_name] if self.tool_name else [],
++            "tool_properties": self.tool_properties.to_dict() if self.tool_properties else {},
+             "start_time": self.start_time.isoformat() if self.start_time else None,
+             "end_time": self.end_time.isoformat() if self.end_time else None,
+             "sequence": self.sequence
+@@ -113,6 +116,15 @@ class PlannerField:
+         elif 'tool_name' not in data:
+             data['tool_name'] = []
+         
++        # Handle tool_properties field - convert from dict to ToolProperties
++        if 'tool_properties' in data and data['tool_properties']:
++            if isinstance(data['tool_properties'], dict):
++                data['tool_properties'] = ToolProperties.from_dict(data['tool_properties'])
++            else:
++                data['tool_properties'] = None
++        elif 'tool_properties' not in data:
++            data['tool_properties'] = None
++        
+         return cls(**data)
+     
+     def __str__(self) -> str:
+@@ -168,6 +180,7 @@ class PlannerField:
+                 f"interview_instructions='{self.interview_instructions}', "
+                 f"question_text='{self.question_text}', "
+                 f"tool_name={tool_names}, "
++                f"tool_properties={self.tool_properties}, "
+                 f"start_time={self.start_time}, end_time={self.end_time}, "
+                 f"sequence={self.sequence})")
+ 
+diff --git a/app/entities/task_event.py b/app/entities/task_event.py
+index 7b6a2b3..9a41f97 100644
+--- a/app/entities/task_event.py
++++ b/app/entities/task_event.py
+@@ -6,6 +6,7 @@ This entity represents the structured data sent via Server-Sent Events during in
+ from typing import Optional, List, Dict, Any
+ from dataclasses import dataclass
+ from app.models.enums import WorkflowStepType, ToolName
++from app.entities.tool_properties import ToolProperties
+ 
+ 
+ @dataclass
+@@ -44,12 +45,14 @@ class TaskEvent:
+     - toolName: List of tools available for this task (from ToolName enum)
+     - task_definition: Optional text containing question or problem statement
+     - task_properties: Task-specific properties including question ID
++    - tool_properties: Tool-specific properties (e.g., languages list)
+     """
+     
+     task_type: WorkflowStepType
+     tool_name: List[ToolName]
+     task_definition: Optional[str] = None
+     task_properties: Optional[TaskProperties] = None
++    tool_properties: Optional[ToolProperties] = None
+     
+     def __post_init__(self):
+         """Validate and set default values after initialization"""
+@@ -74,7 +77,8 @@ class TaskEvent:
+             "taskType": self.task_type.value,
+             "toolName": [tool.value for tool in self.tool_name],
+             "task_definition": self.task_definition,
+-            "task_properties": self.task_properties.to_dict() if self.task_properties else {}
++            "task_properties": self.task_properties.to_dict() if self.task_properties else {},
++            "tool_properties": self.tool_properties.to_dict() if self.tool_properties else {}
+         }
+     
+     @classmethod
+@@ -91,11 +95,17 @@ class TaskEvent:
+         if "task_properties" in data and data["task_properties"]:
+             task_properties = TaskProperties.from_dict(data["task_properties"])
+         
++        # Handle tool_properties
++        tool_properties = None
++        if "tool_properties" in data and data["tool_properties"]:
++            tool_properties = ToolProperties.from_dict(data["tool_properties"])
++        
+         return cls(
+             task_type=task_type,
+             tool_name=tool_name,
+             task_definition=data.get("task_definition"),
+-            task_properties=task_properties
++            task_properties=task_properties,
++            tool_properties=tool_properties
+         )
+     
+     def add_tool(self, tool: ToolName) -> None:
+@@ -128,4 +138,5 @@ class TaskEvent:
+         return (f"TaskEvent(task_type={self.task_type.value}, "
+                 f"tool_name={[tool.value for tool in self.tool_name]}, "
+                 f"task_definition='{self.task_definition}', "
+-                f"task_properties={self.task_properties})")
++                f"task_properties={self.task_properties}, "
++                f"tool_properties={self.tool_properties})")
+diff --git a/app/interview_playground/timer/interview_timer_monitor.py b/app/interview_playground/timer/interview_timer_monitor.py
+index 13cadb0..c2fee2d 100644
+--- a/app/interview_playground/timer/interview_timer_monitor.py
++++ b/app/interview_playground/timer/interview_timer_monitor.py
+@@ -583,12 +583,13 @@ class InterviewTimerMonitor:
+         # Create task properties with question ID
+         task_properties = TaskProperties(question_id=planner_field.question_id)
+         
+-        # Create TaskEvent
++        # Create TaskEvent with tool_properties from planner_field
+         task_event = TaskEvent(
+             task_type=task_type,
+             tool_name=planner_field.tool_name or [],
+             task_definition=planner_field.question_text,
+-            task_properties=task_properties
++            task_properties=task_properties,
++            tool_properties=planner_field.tool_properties  # Include tool_properties from planner_field
+         )
+         
+         return task_event
+diff --git a/app/interview_playground/utility_functions/parse_design_diagrams/__init__.py b/app/interview_playground/utility_functions/parse_design_diagrams/__init__.py
+index f6139aa..4440965 100644
+--- a/app/interview_playground/utility_functions/parse_design_diagrams/__init__.py
++++ b/app/interview_playground/utility_functions/parse_design_diagrams/__init__.py
+@@ -74,3 +74,5 @@ __all__: List[str] = [
+ 
+ 
+ 
++
++
+diff --git a/app/interview_playground/utility_functions/parse_design_diagrams/models.py b/app/interview_playground/utility_functions/parse_design_diagrams/models.py
+index 47e0776..0481b38 100644
+--- a/app/interview_playground/utility_functions/parse_design_diagrams/models.py
++++ b/app/interview_playground/utility_functions/parse_design_diagrams/models.py
+@@ -231,3 +231,5 @@ class DiagramStructure:
+ 
+ 
+ 
++
++
+diff --git a/app/interview_playground/utility_functions/parse_design_diagrams/parser.py b/app/interview_playground/utility_functions/parse_design_diagrams/parser.py
+index a9534c3..fe1bb59 100644
+--- a/app/interview_playground/utility_functions/parse_design_diagrams/parser.py
++++ b/app/interview_playground/utility_functions/parse_design_diagrams/parser.py
+@@ -758,3 +758,5 @@ class ExcalidrawParser:
+ 
+ 
+ 
++
++
+diff --git a/app/models/candidate_interview_planner.py b/app/models/candidate_interview_planner.py
+index 85cd848..8f04b59 100644
+--- a/app/models/candidate_interview_planner.py
++++ b/app/models/candidate_interview_planner.py
+@@ -1,6 +1,7 @@
+ from sqlmodel import SQLModel, Field, Relationship
+-from typing import Optional, List
++from typing import Optional, List, Dict, Any
+ from datetime import datetime
++from sqlalchemy import Column, JSON
+ import uuid
+ from .enums import ToolName
+ 
+@@ -15,6 +16,11 @@ class CandidateInterviewPlannerBase(SQLModel):
+     sequence: int = Field(description="Order/sequence of this planner in the interview workflow")
+     duration: int = Field(default=0, description="Duration in minutes for this planner step")
+     toolName: Optional[str] = Field(None, description="Tool name for this planner step")
++    toolsProperties: Optional[Dict[str, Any]] = Field(
++        default=None,
++        sa_column=Column(JSON, nullable=True),
++        description="Tool-specific JSONB properties (e.g., languages list)"
++    )
+     answerId: Optional[str] = None
+ 
+ 
+diff --git a/app/sao/__init__.py b/app/sao/__init__.py
+index 0e6beed..c75c3ac 100644
+--- a/app/sao/__init__.py
++++ b/app/sao/__init__.py
+@@ -4,3 +4,5 @@ __all__ = ["daily_sao", "DailySAO"]
+ 
+ 
+ 
++
++
+diff --git a/app/services/interview_context_service.py b/app/services/interview_context_service.py
+index 3deea06..37aecaa 100644
+--- a/app/services/interview_context_service.py
++++ b/app/services/interview_context_service.py
+@@ -11,6 +11,7 @@ from app.core.database import get_db_session
+ from app.dao.candidate_interview_dao import candidate_interview_dao
+ from app.dao.candidate_interview_planner_dao import candidate_interview_planner_dao
+ from app.entities.interview_context import InterviewContext, PlannerField
++from app.entities.tool_properties import ToolProperties
+ from app.models.interview_question import InterviewQuestion
+ import structlog
+ import uuid
+@@ -83,6 +84,18 @@ class InterviewContextService:
+                 # Set tool names directly from database toolName field
+                 planner_field.set_tools_from_string(planner.toolName)
+                 
++                # Parse and set tool_properties from JSONB field
++                if planner.toolsProperties:
++                    try:
++                        planner_field.tool_properties = ToolProperties.from_dict(planner.toolsProperties)
++                    except Exception as e:
++                        logger.warning("Failed to parse toolsProperties", 
++                                     planner_id=planner.id, 
++                                     toolsProperties=planner.toolsProperties,
++                                     error=str(e))
++                        # Continue with None tool_properties if parsing fails
++                        planner_field.tool_properties = None
++                
+                 # Set question text from fetched interview questions
+                 if planner.questionId in interview_questions:
+                     question = interview_questions[planner.questionId]
+diff --git a/config/production.env b/config/production.env
+deleted file mode 100644
+index 1499e0d..0000000
+--- a/config/production.env
++++ /dev/null
+@@ -1,25 +0,0 @@
+-DATABASE_URL=postgresql+asyncpg://prod_user:prod_password@prod_host:5432/prod_interview_db
+-DB_SCHEMA=public
+-JWT_SECRET_KEY=super-secure-secret-key-for-production
+-JWT_ALGORITHM=HS256
+-JWT_EXPIRE_MINUTES=60
+-LOG_LEVEL=INFO
+-ENVIRONMENT=production
+-API_PREFIX=/api/v1
+-CORS_ORIGINS=["https://yourapp.com"]
+-DB_POOL_SIZE=20
+-DB_MAX_OVERFLOW=30
+-
+-# Pipecat API Keys (add your actual keys here)
+-# Note: google_api_key is used for both Google LLM and Gemini services
+-google_api_key=AIzaSyB01bDbbVJfGYgyl-umaun8gbzwzQd09cU
+-deepgram_api_key=819b8e0d5a81bd621ce700762936f9ee36621e15
+-
+-# AWS SQS Configuration
+-AWS_REGION=ap-south-1
+-AWS_ACCESS_KEY_ID=Xyz
+-AWS_SECRET_ACCESS_KEY=Xyz
+-SQS_INTERVIEW_COMPLETION_QUEUE_URL=https://sqs.ap-south-1.amazonaws.com/714532077139/InterviewCompletion
+-
+-# Logging control
+-DISABLE_WEBRTC_DEBUG=false
+\ No newline at end of file

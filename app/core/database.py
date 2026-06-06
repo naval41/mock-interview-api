@@ -54,5 +54,20 @@ async def create_db_and_tables():
     async with engine.begin() as conn:
         await conn.run_sync(SQLModel.metadata.create_all)
 
+from contextlib import asynccontextmanager
+
+@asynccontextmanager
+async def get_session_context():
+    """Async context manager for getting a database session (for use in services outside FastAPI DI)."""
+    async with async_session_maker() as session:
+        try:
+            yield session
+        except Exception:
+            await session.rollback()
+            raise
+        finally:
+            await session.close()
+
+
 async def close_db():
     await engine.dispose()
