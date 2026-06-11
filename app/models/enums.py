@@ -63,6 +63,7 @@ class WorkflowStepType(str, Enum):
     BEHAVIORAL = "BEHAVIORAL"
     QNA = "QNA"
     WRAP_UP = "WRAP_UP"
+    AI_ASSISTED_CODING = "AI_ASSISTED_CODING"
 
 
 class Recommendation(str, Enum):

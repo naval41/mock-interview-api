@@ -8,6 +8,7 @@ from app.core.config import settings
 from app.core.database import create_db_and_tables, close_db
 from app.core.logging import setup_logging
 from app.controllers import auth_controller, interview_controller
+from app.controllers.ai_copilot_controller import router as ai_copilot_router
 from app.services.pipecat_service import pipecat_service
 
 import structlog
@@ -64,6 +65,7 @@ app.add_middleware(
 # app.add_middleware(LoggingMiddleware)
 
 app.include_router(auth_controller.router, prefix=settings.api_prefix)
+app.include_router(ai_copilot_router)
 app.include_router(interview_controller.router, prefix="")
 
 

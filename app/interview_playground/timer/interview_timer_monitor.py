@@ -4,7 +4,7 @@ InterviewTimerMonitor for managing interview phase timers and coordinating with 
 
 import asyncio
 from datetime import datetime, timedelta
-from typing import Optional, Callable, List
+from typing import Optional, Callable, Dict, List
 from app.entities.interview_context import InterviewContext, PlannerField
 from app.entities.task_event import TaskEvent, TaskProperties
 from app.models.enums import EventType, WorkflowStepType, ToolName, CompletionReason
@@ -557,16 +557,16 @@ class InterviewTimerMonitor:
     
     def _is_last_phase(self, planner_field: PlannerField) -> bool:
         """Check if this is the last planner field.
-        
+
         Args:
             planner_field: The planner field to check
-            
+
         Returns:
             True if this is the last phase, False otherwise
         """
         if not planner_field or not self.interview_context.planner_fields:
             return False
-        
+
         max_sequence = max(pf.sequence for pf in self.interview_context.planner_fields)
         return planner_field.sequence == max_sequence
     
@@ -656,36 +656,59 @@ class InterviewTimerMonitor:
         except Exception as e:
             self.logger.error("Failed to finalize interview", error=str(e))
     
-    def _infer_workflow_step_type_from_tools(self, tool_names: List[ToolName]) -> WorkflowStepType:
+    def _infer_workflow_step_type_from_tools(self, tool_names: List[ToolName], tool_properties=None) -> WorkflowStepType:
         """Infer WorkflowStepType based on the tools required."""
         if not tool_names:
             return WorkflowStepType.BEHAVIORAL
-        
+
         # Check for specific tool combinations
         tool_values = [tool.value for tool in tool_names]
-        
+
         if ToolName.CODE_EDITOR.value in tool_values:
+            if tool_properties and self._is_ai_enabled(tool_properties):
+                return WorkflowStepType.AI_ASSISTED_CODING
             return WorkflowStepType.CODING
         elif ToolName.DESIGN_EDITOR.value in tool_values:
             return WorkflowStepType.SYSTEM_DESIGN
         else:
             return WorkflowStepType.BEHAVIORAL
 
+    def _is_ai_enabled(self, tool_properties) -> bool:
+        """Check if tool_properties has aiEnabled flag (handles both list and dict formats)."""
+        if isinstance(tool_properties, list):
+            return any(isinstance(p, dict) and p.get("aiEnabled") for p in tool_properties)
+        if isinstance(tool_properties, dict):
+            return bool(tool_properties.get("aiEnabled"))
+        return False
+
     def _create_task_event_from_planner(self, planner_field: PlannerField, event_name: str) -> TaskEvent:
         """Create a TaskEvent from a planner field for SSE notifications."""
         # Infer WorkflowStepType from the tools required
-        task_type = self._infer_workflow_step_type_from_tools(planner_field.tool_name or [])
+        task_type = self._infer_workflow_step_type_from_tools(planner_field.tool_name or [], planner_field.tool_properties)
         
-        # Create task properties with question ID
-        task_properties = TaskProperties(question_id=planner_field.question_id)
+        # Create task properties with question ID and workflow step ID
+        task_properties = TaskProperties(
+            question_id=planner_field.question_id,
+            workflow_step_id=self.interview_context.current_workflow_step_id
+        )
         
-        # Create TaskEvent with tool_properties from planner_field
+        # Flatten tool_properties from list to merged dict for SSE consumption
+        raw_props = planner_field.tool_properties
+        if isinstance(raw_props, list):
+            merged_props = {}
+            for p in raw_props:
+                if isinstance(p, dict):
+                    merged_props.update(p)
+            tool_props = merged_props if merged_props else None
+        else:
+            tool_props = raw_props
+
         task_event = TaskEvent(
             task_type=task_type,
             tool_name=planner_field.tool_name or [],
             task_definition=planner_field.question_text,
             task_properties=task_properties,
-            tool_properties=planner_field.tool_properties  # Include tool_properties from planner_field
+            tool_properties=tool_props
         )
         
         return task_event
