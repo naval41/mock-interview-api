@@ -2,6 +2,7 @@
 Mock Interview Bot that coordinates all pipecat components for interview sessions.
 """
 
+import asyncio
 from typing import Optional, Any, Dict, List, cast
 from pipecat.processors.aggregators.llm_response import LLMUserAggregatorParams
 from pipecat.adapters.schemas.function_schema import FunctionSchema
@@ -88,6 +89,11 @@ class InterviewBot:
         self.interview_phase = "initializing"
         self._final_message_sent = False
 
+        # Reconnection grace period management
+        self._disconnect_grace_task: Optional[asyncio.Task] = None
+        self._disconnect_grace_seconds = 300  # 5 minutes grace period
+        self._is_participant_connected = False
+
                 # Processors service for context processing
         self.processors_service = ProcessorsService(
             code_context=True,  # CodeContextProcessor is enabled
@@ -172,6 +178,8 @@ class InterviewBot:
                     allow_interruptions=True
                 ),
                 observers=[RTVIObserver(self.rtvi_processor)],
+                cancel_on_idle_timeout=False,
+                idle_timeout_secs=None,
             )
             
             # Create pipeline runner
@@ -869,6 +877,44 @@ The system will automatically use the current interview context to perform the t
         except Exception as e:
             self.logger.error(f"Failed to process interview completion: {e}", room_id=self.room_id)
     
+    async def _disconnect_grace_period(self):
+        """Wait for the grace period then terminate the interview if no reconnection occurs."""
+        try:
+            await asyncio.sleep(self._disconnect_grace_seconds)
+
+            # Grace period expired without reconnection — terminate the interview
+            self.logger.warning(
+                f"⏰ Grace period expired ({self._disconnect_grace_seconds}s) — terminating interview",
+                room_id=self.room_id
+            )
+            await self._terminate_interview_on_disconnect()
+
+        except asyncio.CancelledError:
+            # Participant reconnected before grace period expired — do nothing
+            self.logger.info("Grace period task cancelled (participant reconnected)")
+
+    async def _terminate_interview_on_disconnect(self):
+        """Execute the full interview termination sequence after disconnect."""
+        try:
+            await self._execute_completion_workflow()
+
+            if self.timer_monitor:
+                await self.timer_monitor.stop_current_timer()
+                self.logger.info("Timer monitor stopped")
+
+            if self.transcript_processor:
+                await self.transcript_processor.publish_session_ended()
+
+            if self.task:
+                await self.task.cancel()
+                self.logger.info("Pipeline task cancelled")
+
+            self.is_running = False
+            self.logger.info("Cleanup completed after grace period expiry")
+
+        except Exception as e:
+            self.logger.error(f"Error during disconnect termination: {e}")
+
     async def _setup_event_handlers(self):
         """Setup all event handlers."""
 
@@ -887,38 +933,65 @@ The system will automatically use the current interview context to perform the t
         @self.transport.event_handler("on_client_connected")
         async def on_client_connected(transport, client):
             self.logger.info("Pipecat Client connected")
-            # Kick off the conversation
-            await self.task.queue_frames([self.context_aggregator.user().get_context_frame()])
-        
+            self._is_participant_connected = True
+
+            # Cancel grace period if participant is reconnecting
+            if self._disconnect_grace_task and not self._disconnect_grace_task.done():
+                self._disconnect_grace_task.cancel()
+                self._disconnect_grace_task = None
+                self.logger.info("🔄 Participant reconnected — grace period cancelled, resuming interview")
+
+                # Resume the timer that was paused on disconnect
+                if self.timer_monitor:
+                    await self.timer_monitor.resume_timer()
+                    self.logger.info("⏱️ Timer resumed after reconnection")
+
+                # Notify via SSE that the interview has resumed
+                if hasattr(self, 'sse_connections') and self.sse_connections:
+                    import json
+                    resume_event = {
+                        "type": "SYSTEM",
+                        "data": {"taskType": "RESUMED", "message": "Interview resumed after reconnection"}
+                    }
+                    for queue in self.sse_connections:
+                        try:
+                            queue.put_nowait(resume_event)
+                        except Exception:
+                            pass
+
+                # Re-prompt the LLM to acknowledge reconnection and continue
+                if self.context_aggregator:
+                    await self.task.queue_frames([self.context_aggregator.user().get_context_frame()])
+                    self.logger.info("🎤 Queued context frame to resume LLM after reconnection")
+
+            else:
+                # First connection — kick off the conversation
+                await self.task.queue_frames([self.context_aggregator.user().get_context_frame()])
+
         @self.transport.event_handler("on_client_disconnected")
         async def on_client_disconnected(transport, client):
             self.logger.info("Pipecat Client disconnected")
-            self.logger.info(f"Final Context Details : {self.context_aggregator}")
-            
-            # Cleanup without closing transport again (already disconnected)
-            try:
-                # Execute completion workflow (moved to separate method)
-                await self._execute_completion_workflow()
-                
-                # Stop timer monitor
-                if self.timer_monitor:
-                    await self.timer_monitor.stop_current_timer()
-                    self.logger.info("Timer monitor stopped")
-                
-                # Publish session ended event
-                if self.transcript_processor:
-                    await self.transcript_processor.publish_session_ended()
-                
-                # Cancel the pipeline task (PipelineRunner doesn't have stop method)
-                if self.task:
-                    await self.task.cancel()
-                    self.logger.info("Pipeline task cancelled")
-                
-                self.is_running = False
-                self.logger.info("Cleanup completed on disconnect")
-                
-            except Exception as e:
-                self.logger.error(f"Error during disconnect cleanup: {e}")
+            self._is_participant_connected = False
+
+            # Don't terminate immediately — start a grace period to allow reconnection.
+            # The UI has a matching 5-minute timeout; if the user's internet returns
+            # and they rejoin the Daily room, on_client_connected will cancel this task.
+            if self._disconnect_grace_task and not self._disconnect_grace_task.done():
+                self.logger.info("Grace period already active, skipping duplicate")
+                return
+
+            # Pause the interview timer so disconnection time doesn't count
+            if self.timer_monitor:
+                await self.timer_monitor.pause_timer()
+                self.logger.info("⏱️ Timer paused — waiting for participant to reconnect")
+
+            self.logger.info(
+                f"⏳ Starting {self._disconnect_grace_seconds}s grace period for reconnection",
+                room_id=self.room_id
+            )
+            self._disconnect_grace_task = asyncio.create_task(
+                self._disconnect_grace_period()
+            )
         
         self.logger.info("🎭 Event handlers setup completed")
     
@@ -948,26 +1021,31 @@ The system will automatically use the current interview context to perform the t
     async def stop(self):
         """Stop the interview bot."""
         try:
+            # Cancel grace period if active (explicit stop takes priority)
+            if self._disconnect_grace_task and not self._disconnect_grace_task.done():
+                self._disconnect_grace_task.cancel()
+                self._disconnect_grace_task = None
+
             # Publish session ended event
             if self.transcript_processor:
                 await self.transcript_processor.publish_session_ended()
-            
+
             # Stop timer monitor first
             if self.timer_monitor:
                 await self.timer_monitor.stop_current_timer()
                 self.logger.info("Timer monitor stopped")
-            
+
             # Cancel the pipeline task (PipelineRunner doesn't have stop method)
             if self.task:
                 await self.task.cancel()
                 self.logger.info("Pipeline task cancelled")
-            
+
             if self.transport:
                 await self.transport.close()
-            
+
             self.is_running = False
             self.logger.info(f"🛑 Interview bot stopped for room_id: {self.room_id}")
-            
+
         except Exception as e:
             self.logger.error(f"Failed to stop interview bot: {e}")
     
