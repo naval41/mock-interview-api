@@ -959,10 +959,16 @@ The system will automatically use the current interview context to perform the t
                         except Exception:
                             pass
 
-                # Re-prompt the LLM to acknowledge reconnection and continue
-                if self.context_aggregator:
-                    await self.task.queue_frames([self.context_aggregator.user().get_context_frame()])
-                    self.logger.info("🎤 Queued context frame to resume LLM after reconnection")
+                # Re-prompt the LLM after the reconnection interruption storm settles.
+                # During reconnection, VAD detects audio artifacts from WebRTC
+                # renegotiation, triggering InterruptionFrames that cancel pending
+                # DataFrames (including LLM output). The delay lets this settle.
+                if self.task:
+                    import asyncio
+                    await asyncio.sleep(2.0)
+                    from pipecat.frames.frames import LLMRunFrame
+                    await self.task.queue_frames([LLMRunFrame()])
+                    self.logger.info("🎤 Queued LLMRunFrame to resume LLM after reconnection (2s delay for interruption settle)")
 
             else:
                 # First connection — kick off the conversation
