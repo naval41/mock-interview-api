@@ -20,8 +20,8 @@ class TTSService:
         self.kwargs = kwargs
         self._tts_instance = None
         
-    def create_deepgram(self, api_key: str, voice: str = "aura-2-andromeda-en", 
-                       filter_code: bool = True, filter_tables: bool = True, 
+    def create_deepgram(self, api_key: str, voice: str = "aura-2-vesta-en",
+                       filter_code: bool = True, filter_tables: bool = True,
                        enable_markdown_filter: bool = True) -> BaseTTS:
         """Create a Deepgram TTS instance with markdown filtering.
         
@@ -55,7 +55,7 @@ class TTSService:
         """
         if provider.lower() == "deepgram":
             api_key = kwargs.get("api_key", "")
-            voice = kwargs.get("voice", "aura-2-andromeda-en")
+            voice = kwargs.get("voice", "aura-2-vesta-en")
             filter_code = kwargs.get("filter_code", True)
             filter_tables = kwargs.get("filter_tables", True)
             enable_markdown_filter = kwargs.get("enable_markdown_filter", True)
@@ -72,7 +72,7 @@ class TTSService:
         if not self._tts_instance:
             if self.provider.lower() == "deepgram":
                 api_key = self.kwargs.get("api_key", "")
-                voice = self.kwargs.get("voice", "aura-2-andromeda-en")
+                voice = self.kwargs.get("voice", "aura-2-vesta-en")
                 filter_code = self.kwargs.get("filter_code", True)
                 filter_tables = self.kwargs.get("filter_tables", True)
                 enable_markdown_filter = self.kwargs.get("enable_markdown_filter", True)

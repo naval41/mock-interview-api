@@ -11,8 +11,8 @@ from pipecat.utils.text.markdown_text_filter import MarkdownTextFilter
 class DeepgramTTS(BaseTTS):
     """Deepgram TTS implementation with markdown filtering."""
     
-    def __init__(self, api_key: str, voice: str = "aura-2-andromeda-en", 
-                 filter_code: bool = True, filter_tables: bool = True, 
+    def __init__(self, api_key: str, voice: str = "aura-2-vesta-en",
+                 filter_code: bool = True, filter_tables: bool = True,
                  enable_markdown_filter: bool = True):
         """Initialize Deepgram TTS with markdown filtering.
         
