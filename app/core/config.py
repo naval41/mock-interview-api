@@ -23,6 +23,7 @@ class Settings(BaseSettings):
     # Pipecat API Keys
     deepgram_api_key: str = ""
     google_api_key: str = ""
+    elevenlabs_api_key: str = ""
 
     # Daily.co integration
     daily_api_key: str = ""

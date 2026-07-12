@@ -318,16 +318,21 @@ class InterviewBot:
             raise
     
     async def _setup_tts(self):
-        """Setup TTS service."""
+        """Setup TTS service (ElevenLabs preferred, Deepgram fallback)."""
         try:
-            deepgram_key = settings.deepgram_api_key
-            if not deepgram_key:
-                raise ValueError("deepgram_api_key not found in settings. Please check your config/local.env file")
-            
-            ttsService = TTSService(provider="deepgram", api_key=deepgram_key)
-            self.tts = ttsService.setup_processor()
-            self.logger.info("🔊 TTS service setup completed")
-            
+            elevenlabs_key = settings.elevenlabs_api_key
+            if elevenlabs_key:
+                ttsService = TTSService(provider="elevenlabs", api_key=elevenlabs_key)
+                self.tts = ttsService.setup_processor()
+                self.logger.info("🔊 TTS service setup completed (ElevenLabs)")
+            else:
+                deepgram_key = settings.deepgram_api_key
+                if not deepgram_key:
+                    raise ValueError("No TTS API key found. Set ELEVENLABS_API_KEY or DEEPGRAM_API_KEY in config.")
+                ttsService = TTSService(provider="deepgram", api_key=deepgram_key)
+                self.tts = ttsService.setup_processor()
+                self.logger.info("🔊 TTS service setup completed (Deepgram fallback)")
+
         except Exception as e:
             self.logger.error(f"Failed to setup TTS service: {e}")
             raise
