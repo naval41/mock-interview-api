@@ -23,6 +23,13 @@ class Settings(BaseSettings):
     # Pipecat API Keys
     deepgram_api_key: str = ""
     google_api_key: str = ""
+    elevenlabs_api_key: str = ""
+
+    # TTS Configuration
+    tts_provider: str = "kokoro"  # "kokoro" (local) or "deepgram" (cloud)
+    kokoro_voice: str = "af_heart"
+    kokoro_speed: float = 1.0
+    kokoro_lang_code: str = "en-us"  # en-us, en-gb, hi, fr, es, ja, zh, pt-br, it
 
     # Daily.co integration
     daily_api_key: str = ""

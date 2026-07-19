@@ -318,16 +318,30 @@ class InterviewBot:
             raise
     
     async def _setup_tts(self):
-        """Setup TTS service."""
+        """Setup TTS service (Kokoro local, Deepgram fallback)."""
         try:
-            deepgram_key = settings.deepgram_api_key
-            if not deepgram_key:
-                raise ValueError("deepgram_api_key not found in settings. Please check your config/local.env file")
-            
-            ttsService = TTSService(provider="deepgram", api_key=deepgram_key)
-            self.tts = ttsService.setup_processor()
-            self.logger.info("🔊 TTS service setup completed")
-            
+            tts_provider = getattr(settings, "tts_provider", "kokoro")
+
+            if tts_provider == "kokoro":
+                kokoro_voice = getattr(settings, "kokoro_voice", "af_heart")
+                kokoro_speed = getattr(settings, "kokoro_speed", 1.0)
+                kokoro_lang = getattr(settings, "kokoro_lang_code", "a")
+                ttsService = TTSService(
+                    provider="kokoro",
+                    voice=kokoro_voice,
+                    speed=kokoro_speed,
+                    lang_code=kokoro_lang,
+                )
+                self.tts = ttsService.setup_processor()
+                self.logger.info("🔊 TTS service setup completed (Kokoro local)")
+            else:
+                deepgram_key = settings.deepgram_api_key
+                if not deepgram_key:
+                    raise ValueError("DEEPGRAM_API_KEY not found in settings.")
+                ttsService = TTSService(provider="deepgram", api_key=deepgram_key)
+                self.tts = ttsService.setup_processor()
+                self.logger.info("🔊 TTS service setup completed (Deepgram)")
+
         except Exception as e:
             self.logger.error(f"Failed to setup TTS service: {e}")
             raise
