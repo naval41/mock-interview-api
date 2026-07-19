@@ -1,4 +1,4 @@
-from typing import Optional
+from typing import List, Optional
 
 from app.dao.ai_interaction_dao import AiInteractionDao
 from app.models.ai_interaction import AiInteraction
@@ -56,4 +56,36 @@ class AiInteractionCaptureService:
         interaction.edited_after_accept = edited_after_accept
         interaction.edit_diff = edit_diff
         interaction.code_context_after = code_after
+        return await self.dao.update(interaction)
+
+    async def record_snippets(
+        self,
+        interaction_id: str,
+        snippets: List[dict],
+    ) -> AiInteraction:
+        """Store the AI code suggestion snippets and their acceptance status
+        against a given interaction, recomputing the per-status counters."""
+        interaction = await self.dao.get_by_id(interaction_id)
+        if interaction is None:
+            raise ValueError(f"AiInteraction not found: {interaction_id}")
+
+        normalized = [dict(s) for s in snippets]
+        interaction.snippets = normalized
+
+        interaction.total_code_snippets = len(normalized)
+        interaction.accepted_code_snippets = sum(
+            1 for s in normalized if str(s.get("status", "")).lower() == "accepted"
+        )
+        interaction.rejected_code_snippets = sum(
+            1 for s in normalized if str(s.get("status", "")).lower() == "rejected"
+        )
+        interaction.pending_code_snippets = sum(
+            1
+            for s in normalized
+            if str(s.get("status", "")).lower() in ("pending", "none", "")
+        )
+
+        # A snippet accepted at least once implies the suggestion was accepted.
+        interaction.accepted = interaction.accepted_code_snippets > 0
+
         return await self.dao.update(interaction)

@@ -2,6 +2,7 @@ import uuid
 from datetime import datetime
 from typing import Optional
 
+from sqlalchemy import JSON
 from sqlmodel import Column, Field, SQLModel, Text
 
 
@@ -26,4 +27,9 @@ class AiInteraction(SQLModel, table=True):
     cursor_position_line: Optional[int] = Field(default=None)
     cursor_position_col: Optional[int] = Field(default=None)
     time_since_last_interaction_ms: Optional[int] = Field(default=None)
+    snippets: list = Field(default_factory=list, sa_column=Column(JSON, nullable=False, server_default="[]"))
+    total_code_snippets: Optional[int] = Field(default=None)
+    accepted_code_snippets: Optional[int] = Field(default=None)
+    pending_code_snippets: Optional[int] = Field(default=None)
+    rejected_code_snippets: Optional[int] = Field(default=None)
     created_at: datetime = Field(default_factory=datetime.utcnow)

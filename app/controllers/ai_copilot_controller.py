@@ -18,6 +18,8 @@ from app.schemas.ai_copilot import (
     AiInlineResponse,
     BudgetStatusResponse,
     InteractionAcceptance,
+    StoreSnippetsRequest,
+    StoreSnippetsResponse,
 )
 from app.services.ai_budget_service import AiBudgetService
 from app.services.ai_interaction_capture_service import AiInteractionCaptureService
@@ -384,3 +386,38 @@ async def record_acceptance(
     )
 
     return {"status": "recorded"}
+
+
+@router.post("/snippets", response_model=StoreSnippetsResponse)
+async def store_snippets(
+    request: StoreSnippetsRequest,
+    user=Depends(validate_request),
+    db: AsyncSession = Depends(get_session),
+):
+    """Store the code suggestion snippets (and their accept/reject/none status)
+    that an AI agent produced for a given interaction within an AI session.
+
+    Snippets are persisted on the owning AiInteraction row, and per-status
+    counters are recomputed from the payload.
+    """
+    interaction_dao = AiInteractionDao(db)
+    capture_service = AiInteractionCaptureService(interaction_dao)
+
+    snippets_payload = [s.model_dump(by_alias=True, exclude_none=True) for s in request.snippets]
+
+    try:
+        interaction = await capture_service.record_snippets(
+            interaction_id=request.interaction_id,
+            snippets=snippets_payload,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc))
+
+    return StoreSnippetsResponse(
+        interaction_id=interaction.id,
+        ai_session_id=interaction.ai_session_id,
+        total_code_snippets=interaction.total_code_snippets or 0,
+        accepted_code_snippets=interaction.accepted_code_snippets or 0,
+        rejected_code_snippets=interaction.rejected_code_snippets or 0,
+        pending_code_snippets=interaction.pending_code_snippets or 0,
+    )

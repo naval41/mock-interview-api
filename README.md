@@ -133,6 +133,98 @@ If the token is valid and the user exists, you will receive user info. Otherwise
 ### Real-time Events (Server-Sent Events)
 - `GET /api/interview/{room_id}/events` - SSE stream for real-time interview updates
 
+### AI Copilot (AI-Assisted Coding)
+- `POST /ai-copilot/chat` - Chat with the AI copilot (records a CHAT interaction)
+- `POST /ai-copilot/chat/stream` - Streaming chat (SSE token stream)
+- `POST /ai-copilot/inline` - Inline code suggestion
+- `GET /ai-copilot/budget/{candidate_interview_id}/{workflow_step_id}` - Token budget status
+- `POST /ai-copilot/reset` - Reset conversation history (preserves token usage)
+- `POST /ai-copilot/accept` - Record accept/edit of a single suggestion
+- `POST /ai-copilot/snippets` - Store the code suggestion snippets and their accept/reject status for an interaction
+
+> All `/ai-copilot/*` endpoints require a valid JWT (`Authorization: Bearer <token>`).
+
+#### Store Snippets against an AI Session
+
+When the AI agent produces code suggestions, the candidate may accept, reject, or leave them
+pending. This endpoint persists those snippets (and their status) on the owning `AiInteraction`
+row, and recomputes the per-status counters (`total`, `accepted`, `rejected`, `pending`).
+
+The `interactionId` is the `interaction_id` returned by `/ai-copilot/chat`, `/chat/stream`, or
+`/inline`. The interaction belongs to an `AiSession`, so snippets are effectively stored against
+that session's interaction.
+
+**Endpoint**
+```
+POST /ai-copilot/snippets
+```
+
+**Request body**
+```json
+{
+  "interactionId": "123",
+  "snippets": [
+    {
+      "id": 1,
+      "status": "accepted",
+      "insertMeta": {
+        "startLineNumber": 12,
+        "endLineNumber": 14,
+        "originalText": "    // old line",
+        "contentSnapshotAfterInsert": "...full file..."
+      }
+    },
+    { "id": 2, "status": "none" },
+    { "id": 3, "status": "none" }
+  ]
+}
+```
+
+- `interactionId` (string, required) - the interaction the snippets belong to.
+- `snippets[].id` (int, required) - client-side snippet id.
+- `snippets[].status` (string) - one of `accepted`, `rejected`, `pending`, `none` (default `none`). `none`/`pending` both count as pending.
+- `snippets[].insertMeta` (object, optional) - insertion metadata, only meaningful for accepted snippets.
+
+**Response**
+```json
+{
+  "interaction_id": "123",
+  "ai_session_id": "9f8e...",
+  "total_code_snippets": 3,
+  "accepted_code_snippets": 1,
+  "rejected_code_snippets": 0,
+  "pending_code_snippets": 2,
+  "status": "stored"
+}
+```
+
+**Test locally with curl**
+```bash
+curl -X POST http://localhost:8000/ai-copilot/snippets \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer <your-jwt-token>" \
+  -d '{
+    "interactionId": "123",
+    "snippets": [
+      {
+        "id": 1,
+        "status": "accepted",
+        "insertMeta": {
+          "startLineNumber": 12,
+          "endLineNumber": 14,
+          "originalText": "    // old line",
+          "contentSnapshotAfterInsert": "...full file..."
+        }
+      },
+      { "id": 2, "status": "none" },
+      { "id": 3, "status": "none" }
+    ]
+  }'
+```
+
+Returns `404` if the `interactionId` does not exist. You can also exercise this from the Swagger
+UI at `http://localhost:8000/docs` (look for the **ai-copilot** tag).
+
 ### Health & Info
 - `GET /` - API info
 - `GET /health` - Health check

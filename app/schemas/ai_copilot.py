@@ -1,5 +1,5 @@
 from typing import Optional, List
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class AiChatRequest(BaseModel):
@@ -69,3 +69,42 @@ class InteractionAcceptance(BaseModel):
     edited_after_accept: Optional[bool] = None
     edit_diff: Optional[str] = None
     code_after: Optional[str] = None
+
+
+class SnippetInsertMeta(BaseModel):
+    start_line_number: Optional[int] = Field(default=None, alias="startLineNumber")
+    end_line_number: Optional[int] = Field(default=None, alias="endLineNumber")
+    original_text: Optional[str] = Field(default=None, alias="originalText")
+    content_snapshot_after_insert: Optional[str] = Field(
+        default=None, alias="contentSnapshotAfterInsert"
+    )
+
+    class Config:
+        populate_by_name = True
+
+
+class Snippet(BaseModel):
+    id: int
+    status: str = "none"  # accepted | rejected | pending | none
+    insert_meta: Optional[SnippetInsertMeta] = Field(default=None, alias="insertMeta")
+
+    class Config:
+        populate_by_name = True
+
+
+class StoreSnippetsRequest(BaseModel):
+    interaction_id: str = Field(alias="interactionId")
+    snippets: List[Snippet] = Field(default_factory=list)
+
+    class Config:
+        populate_by_name = True
+
+
+class StoreSnippetsResponse(BaseModel):
+    interaction_id: str
+    ai_session_id: str
+    total_code_snippets: int
+    accepted_code_snippets: int
+    rejected_code_snippets: int
+    pending_code_snippets: int
+    status: str = "stored"
