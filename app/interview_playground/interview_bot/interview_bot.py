@@ -605,10 +605,12 @@ Please begin the interview following these specific instructions for this phase.
         return FunctionSchema(
             name="transition_to_next_phase",
             description=(
-                "Transition the interview to the next phase when the current phase objectives are complete. "
-                "Use this when you have finished the behavioral questions, completed the coding problem discussion, "
-                "or reached a natural transition point before the timer expires. "
-                "The system will automatically use the current interview context to perform the transition."
+                "Transition the interview to the next phase. Primarily use this when the candidate "
+                "EXPLICITLY asks to move on or says they are finished (set transition_reason='candidate_ready'). "
+                "Do NOT call this for coding/design phases merely because the candidate paused, went quiet, or "
+                "is still working — silence is normal while solving. The system enforces a minimum time per phase "
+                "and will reject premature inferred transitions. The system uses the current interview context "
+                "to perform the transition."
             ),
             properties={
                 "transition_reason": {
@@ -651,17 +653,19 @@ Please begin the interview following these specific instructions for this phase.
 You have access to a function called `transition_to_next_phase` that allows you to proactively move to the next interview phase when appropriate.
 
 **When to use this function:**
-- When you have completed all objectives for the current phase (e.g., asked all behavioral questions, completed coding problem discussion)
-- When the candidate has provided sufficient responses and you're ready to move forward
-- When you reach a natural breakpoint in the conversation before the timer expires
-- When you determine that continuing the current phase would be redundant or unproductive
+- When the candidate EXPLICITLY says they are finished or want to move on (e.g., "I'm done", "let's move on", "I don't know this one, can we skip it"). Use transition_reason='candidate_ready'. This is honored immediately, even early in a phase.
+- When you have genuinely completed all objectives for the current phase (e.g., asked all behavioral questions) AND the candidate has nothing more to add.
 
-**When NOT to use this function:**
-- If the timer is about to expire (let the timer handle the transition)
-- If you haven't completed the phase objectives yet
-- If the candidate is still actively working on a problem or question
-- If less than 10% of the phase duration has elapsed
-- If the candidate just noticed a new problem was loaded (this is normal, not a signal to transition)
+**When NOT to use this function (especially in CODING / SYSTEM_DESIGN phases):**
+- DO NOT transition just because the candidate went quiet, paused to think, or is typing. A pause is NOT a signal to move on — coding problems involve long silences while the candidate works.
+- DO NOT infer "natural breakpoint" from a lull in conversation. Wait for an explicit signal or the timer.
+- If the timer is about to expire (let the timer handle the transition).
+- If you haven't completed the phase objectives yet.
+- If the candidate is still actively working on a problem or question.
+- If the candidate just noticed a new problem was loaded (this is normal, not a signal to transition).
+
+**IMPORTANT — the system enforces a minimum time on each phase.**
+For coding/design phases, inferred transitions ('natural_breakpoint', 'objectives_complete', 'other') are REJECTED until roughly half the phase duration has elapsed. If your transition is rejected, simply continue the current problem — do NOT repeatedly retry, and do NOT tell the candidate you are transitioning. Only 'candidate_ready' (an explicit candidate request) bypasses this minimum.
 
 **How to use:**
 Simply call `transition_to_next_phase()` when you're ready to move to the next phase.

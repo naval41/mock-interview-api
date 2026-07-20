@@ -14,6 +14,31 @@ import structlog
 logger = structlog.get_logger()
 
 
+# --- Premature phase-transition guard configuration ---
+# Minimum fraction of the configured phase duration that must elapse before the
+# LLM is allowed to transition on an INFERRED signal (i.e. not an explicit
+# candidate request). Prevents the bot from abandoning a problem after
+# misjudging a natural pause, while the timer still ends the phase on schedule.
+MIN_ELAPSED_FRACTION_CODING = 0.5      # CODING / AI_ASSISTED_CODING / SYSTEM_DESIGN
+MIN_ELAPSED_FRACTION_DEFAULT = 0.2     # INTRO / BEHAVIORAL / QNA / other phases
+
+# Absolute floor (seconds) so short phases still get a sane minimum.
+MIN_ELAPSED_FLOOR_SECONDS = 60
+
+# Transition reasons that represent an EXPLICIT candidate request to move on.
+# These bypass the minimum-duration guard so a candidate who is stuck (e.g.
+# "I don't know this one, can we move on?") is never trapped on a phase and
+# loses time on the next one.
+CANDIDATE_REQUESTED_REASONS = {"candidate_ready"}
+
+# Phase types that get the stricter CODING floor.
+CODING_PHASE_TYPES = {
+    WorkflowStepType.CODING,
+    WorkflowStepType.AI_ASSISTED_CODING,
+    WorkflowStepType.SYSTEM_DESIGN,
+}
+
+
 class InterviewTimerMonitor:
     """Monitor that manages timers and coordinates with ContextSwitchProcessor for interview phase transitions."""
     
@@ -399,13 +424,65 @@ class InterviewTimerMonitor:
         except Exception as e:
             self.logger.error("Failed to send time nudge signal", error=str(e))
     
-    def can_transition(self, candidate_interview_id: str, current_phase_sequence: int) -> bool:
+    def _minimum_elapsed_seconds_for_current_phase(self) -> int:
+        """Compute the minimum seconds that must elapse before an inferred
+        LLM transition is permitted for the current phase.
+
+        Coding/design phases use the stricter fraction; other phases use the
+        default. An absolute floor is always applied so very short phases still
+        get a sane minimum.
+        """
+        current_planner = self.interview_context.get_current_planner_field()
+        if not current_planner:
+            return MIN_ELAPSED_FLOOR_SECONDS
+
+        phase_type = self._infer_workflow_step_type_from_tools(
+            current_planner.tool_name or [], current_planner.tool_properties
+        )
+        fraction = (
+            MIN_ELAPSED_FRACTION_CODING
+            if phase_type in CODING_PHASE_TYPES
+            else MIN_ELAPSED_FRACTION_DEFAULT
+        )
+        duration_seconds = (current_planner.duration or 0) * 60
+        return max(MIN_ELAPSED_FLOOR_SECONDS, int(duration_seconds * fraction))
+
+    def _check_minimum_duration(self, transition_reason: Optional[str]) -> bool:
+        """Return True if the phase has run long enough for an inferred LLM
+        transition. Explicit candidate requests bypass this check entirely so a
+        stuck candidate is never trapped on a phase.
+        """
+        # Guard #1: explicit candidate requests always pass — a candidate who
+        # says "I don't know this, let's move on" must move on immediately.
+        if transition_reason in CANDIDATE_REQUESTED_REASONS:
+            return True
+
+        status = self.get_timer_status()
+        elapsed = status.get("elapsed_time_seconds", 0)
+        minimum = self._minimum_elapsed_seconds_for_current_phase()
+
+        if elapsed < minimum:
+            self.logger.warning(
+                "⛔ Rejecting premature LLM transition (minimum phase duration not met)",
+                elapsed_seconds=elapsed,
+                minimum_seconds=minimum,
+                transition_reason=transition_reason,
+                current_sequence=self.interview_context.current_workflow_step_sequence,
+            )
+            return False
+
+        return True
+
+    def can_transition(self, candidate_interview_id: str, current_phase_sequence: int,
+                       transition_reason: Optional[str] = None) -> bool:
         """Validate if transition request is valid.
-        
+
         Args:
             candidate_interview_id: The candidate interview ID
             current_phase_sequence: The current phase sequence number
-            
+            transition_reason: Reason supplied by the LLM. Explicit candidate
+                requests bypass the minimum-duration guard.
+
         Returns:
             True if transition is valid, False otherwise
         """
@@ -415,20 +492,25 @@ class InterviewTimerMonitor:
                                requested=candidate_interview_id,
                                actual=self.interview_context.candidate_interview_id)
             return False
-        
+
         # Validate current phase sequence matches
         if self.interview_context.current_workflow_step_sequence != current_phase_sequence:
             self.logger.warning("Phase sequence mismatch",
                                requested=current_phase_sequence,
                                actual=self.interview_context.current_workflow_step_sequence)
             return False
-        
+
         # Check if there's a next phase available
         next_planner = self.interview_context.get_next_planner_field()
         if not next_planner:
             self.logger.warning("No next phase available for transition")
             return False
-        
+
+        # Guard #1: reject premature transitions the LLM inferred (e.g. it
+        # misjudged a natural pause) before the phase has run long enough.
+        if not self._check_minimum_duration(transition_reason):
+            return False
+
         return True
     
     async def handle_llm_initiated_transition(
@@ -449,11 +531,18 @@ class InterviewTimerMonitor:
         """
         async with self._transition_lock:
             try:
-                # Validate the transition request
-                if not self.can_transition(candidate_interview_id, current_phase_sequence):
+                # Validate the transition request (includes the minimum-duration
+                # guard for inferred transitions; candidate requests bypass it).
+                if not self.can_transition(candidate_interview_id, current_phase_sequence,
+                                           transition_reason=transition_reason):
                     return {
-                        "status": "error",
-                        "message": "Invalid transition request",
+                        "status": "rejected",
+                        "message": (
+                            "Transition not permitted yet: the current phase has not run long "
+                            "enough. Continue the current problem. If the candidate has explicitly "
+                            "asked to move on, call transition_to_next_phase with "
+                            "transition_reason='candidate_ready'."
+                        ),
                         "current_sequence": self.interview_context.current_workflow_step_sequence
                     }
                 
@@ -463,18 +552,44 @@ class InterviewTimerMonitor:
                                 transition_reason=transition_reason)
                 
                 # Cancel current timer
+                # Guard #3 (observability): capture elapsed-vs-minimum BEFORE
+                # the timer is stopped, so premature transitions that pass the
+                # guard are still measurable. Emit a metric-style log that can
+                # back a CloudWatch alarm on early LLM transitions.
+                _status = self.get_timer_status()
+                _elapsed = _status.get("elapsed_time_seconds", 0)
+                _minimum = self._minimum_elapsed_seconds_for_current_phase()
+                _is_early = _elapsed < _minimum
+                self.logger.info(
+                    "📊 llm_phase_transition_metric",
+                    metric="llm_phase_transition",
+                    elapsed_seconds=_elapsed,
+                    minimum_seconds=_minimum,
+                    transition_reason=transition_reason,
+                    is_early=_is_early,
+                    candidate_requested=(transition_reason in CANDIDATE_REQUESTED_REASONS),
+                    from_sequence=current_phase_sequence,
+                )
+                if _is_early:
+                    self.logger.warning(
+                        "⚠️ Early LLM phase transition allowed (candidate-requested bypass)",
+                        elapsed_seconds=_elapsed,
+                        minimum_seconds=_minimum,
+                        transition_reason=transition_reason,
+                    )
+
                 await self.stop_current_timer()
-                
+
                 # Execute transition
                 await self.transition_to_next_planner(initiated_by="llm")
-                
+
                 new_sequence = self.interview_context.current_workflow_step_sequence
                 result = {
                     "status": "success",
                     "message": "Phase transition completed",
                     "new_sequence": new_sequence
                 }
-                
+
                 self.logger.info("✅ LLM phase transition completed",
                                 status=result.get("status"),
                                 new_sequence=new_sequence)
