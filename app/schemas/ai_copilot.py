@@ -3,6 +3,15 @@ from pydantic import BaseModel, Field
 
 
 class AiChatRequest(BaseModel):
+    """A copilot chat turn, from either a coding round or a design round.
+
+    One schema for both because everything except the context field is shared —
+    session, budget, history and telemetry do not care which round it is. The
+    branch is `design_context`: present means the design prompt and the component
+    taxonomy, absent means the coding prompt. A separate `mode` flag would be a
+    second source of truth for the same fact.
+    """
+
     candidate_interview_id: str
     workflow_step_id: str
     message: str
@@ -10,6 +19,9 @@ class AiChatRequest(BaseModel):
     cursor_line: Optional[int] = None
     cursor_col: Optional[int] = None
     language: str = "python"
+    # The canvas's Mermaid, not its graph JSON: the model has to answer in Mermaid
+    # for the Apply button to work, so it reads the same dialect it writes.
+    design_context: Optional[str] = None
 
 
 class AiInlineRequest(BaseModel):

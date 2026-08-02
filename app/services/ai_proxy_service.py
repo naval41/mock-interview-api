@@ -4,6 +4,7 @@ from typing import AsyncGenerator, List, Optional
 import google.generativeai as genai
 
 from app.core.config import settings
+from app.services.design_prompt import build_design_system_prompt
 
 MAX_HISTORY_CHARS = 3000
 
@@ -25,21 +26,31 @@ class AiProxyService:
         """
         messages = []
 
-        # System context as the opening exchange
-        system_parts = [
-            "You are a coding assistant in a technical interview. "
-            "Help the candidate with their coding task. "
-            "Be concise. Provide code suggestions when appropriate. "
-            f"The candidate is writing in {request.language}."
-        ]
-        if request.code_context:
-            system_parts.append(
-                f"Current code context:\n```{request.language}\n{request.code_context}\n```"
+        # Presence, not truth: a design round with an empty canvas sends "", which
+        # still has to take the design branch. Only a coding round omits the field.
+        design_context = getattr(request, "design_context", None)
+
+        if design_context is not None:
+            system_parts = build_design_system_prompt(design_context)
+            acknowledgement = (
+                "Understood. I'll stay within the component vocabulary and give you "
+                "the full diagram when I propose a change."
             )
+        else:
+            system_parts = [
+                "You are a coding assistant in a technical interview. "
+                "Help the candidate with their coding task. "
+                "Be concise. Provide code suggestions when appropriate. "
+                f"The candidate is writing in {request.language}."
+            ]
+            if request.code_context:
+                system_parts.append(
+                    f"Current code context:\n```{request.language}\n{request.code_context}\n```"
+                )
+            acknowledgement = "Understood. I'm ready to help with your code."
+
         messages.append({"role": "user", "parts": system_parts})
-        messages.append(
-            {"role": "model", "parts": ["Understood. I'm ready to help with your code."]}
-        )
+        messages.append({"role": "model", "parts": [acknowledgement]})
 
         # Insert truncated conversation history
         if history:

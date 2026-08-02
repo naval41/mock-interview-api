@@ -268,6 +268,65 @@ The application uses structured logging with:
 - Type hints and Pydantic validation
 - Modular, testable architecture
 
+## Testing & Evals
+
+The suite lives in `tests/` (see `tests/README.md` for the full layout). It has two layers:
+
+- **Layer 1 — deterministic guard tests** (`tests/unit/`): pure logic around the phase-transition guard. No network, no secrets.
+- **Layer 2 — decision evals** (`tests/eval/`): the harness/dataset/metrics run deterministically in the gate; a **live Gemini** eval (`run_llm_eval.py`) is opt-in behind the `llm_live` marker.
+
+### Install test dependencies
+
+`pytest` and `pytest-asyncio` are in `requirements.txt`, so a normal install covers them:
+
+```bash
+pip install -r requirements.txt
+```
+
+### Run the tests locally
+
+The suite is **hermetic** — it needs no database or secrets. `tests/conftest.py` injects dummy settings, and the DB engine is created lazily and never connects. From the package root (`mock-interview-api/`):
+
+```bash
+# Full deterministic suite (this is what the Docker build gate runs):
+pytest
+
+# Just one layer:
+pytest tests/unit          # Layer 1 — guard logic
+pytest tests/eval          # Layer 2 — harness/dataset/metrics
+
+# By marker:
+pytest -m unit
+pytest -m eval
+
+# A single test, verbose:
+pytest tests/unit/test_phase_transition_guard.py -v
+```
+
+The default config (`pyproject.toml`) runs `-m "not llm_live"`, so paid/networked evals never run by accident.
+
+### Run the live Gemini eval (opt-in)
+
+This calls the real model — it is **excluded** from the default run and the build. Point it at the model production uses:
+
+```bash
+# As a pytest (asserts the quality bar):
+GOOGLE_API_KEY=AIzaSyCVN20GAP5tVFwBovjjFzK4sMg5I1qBF5s pytest -m llm_live
+
+# As a script (prints a report + confusion matrix):
+GOOGLE_API_KEY=<key> python -m tests.eval.run_llm_eval
+```
+
+Without `GOOGLE_API_KEY` set, the live eval **skips** cleanly.
+
+### Tests in the Docker build
+
+The image build runs the deterministic suite in a dedicated `test` stage, and `runtime` copies from it — so **a failing test fails `docker build`**. To run only the gate stage:
+
+```bash
+docker build --target test -t mock-interview-api-test .
+```
+
 ## Database Models
 
 - **Users**: Authentication and user management

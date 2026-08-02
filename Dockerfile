@@ -36,13 +36,41 @@ RUN pip install --upgrade pip \
     && pip install --no-cache-dir -r requirements.txt
 
 
+# --------------------------------------------------------------------------- #
+# Test stage — runs the deterministic (hermetic) suite. This GATES the build:
+# `runtime` copies from this stage, so if any test fails the image build fails.
+# The `llm_live` evals are excluded by the default pytest config (they are paid
+# and networked); run those separately with `pytest -m llm_live`.
+# --------------------------------------------------------------------------- #
+FROM base AS test
+
+ENV PATH="/opt/venv/bin:$PATH" \
+    PYTHONPATH="/app" \
+    ENV="test"
+
+COPY --from=builder /opt/venv /opt/venv
+
+COPY pyproject.toml ./
+COPY app ./app
+COPY config ./config
+COPY tests ./tests
+
+# Fails the build on any test failure. Dummy settings keep the suite hermetic
+# (no real DB/secrets); the DB engine is created lazily and never connects.
+RUN DATABASE_URL="postgresql+asyncpg://test:test@localhost:5432/test" \
+    JWT_SECRET_KEY="test-secret-not-used" \
+    pytest
+
+
 FROM base AS runtime
 
 ENV PATH="/opt/venv/bin:$PATH" \
     PYTHONPATH="/app" \
     ENV="production"
 
-COPY --from=builder /opt/venv /opt/venv
+# Copy from `test` (not `builder`) so the runtime image can only be produced
+# after the test stage passes.
+COPY --from=test /opt/venv /opt/venv
 
 COPY pyproject.toml ./
 COPY app ./app
