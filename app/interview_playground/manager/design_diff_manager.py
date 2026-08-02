@@ -48,7 +48,7 @@ class DesignDiffManager:
         self, 
         question_id: str, 
         candidate_interview_id: str,
-        design_content: dict,  # Original Excalidraw JSON
+        design_content: dict,  # The semantic design graph from the canvas
         description: str,  # Generated description
         mermaid: str,  # Generated mermaid
         timestamp: Optional[int] = None
@@ -59,7 +59,7 @@ class DesignDiffManager:
         Args:
             question_id: ID of the question
             candidate_interview_id: ID of the candidate interview
-            design_content: Original Excalidraw JSON dict
+            design_content: The semantic design graph, as the canvas built it
             description: Generated description
             mermaid: Generated mermaid diagram
             timestamp: Timestamp of the submission
@@ -114,7 +114,7 @@ class DesignDiffManager:
                 # Store in database with language='DESIGN'
                 # Store the complete design package as JSON with metadata
                 design_package = {
-                    "original_design": design_content,
+                    "graph": design_content,
                     "description": description,
                     "mermaid": mermaid,
                     "timestamp": timestamp
@@ -151,7 +151,7 @@ class DesignDiffManager:
                 try:
                     # Extract original design from stored package
                     stored_package = json.loads(existing_solution.answer or "{}")
-                    previous_design = stored_package.get("original_design", {})
+                    previous_design = stored_package.get("graph", {})
                     previous_design_json = json.dumps(previous_design, indent=2)
                 except (json.JSONDecodeError, AttributeError):
                     # If stored format is different, treat as first submission
@@ -178,7 +178,7 @@ class DesignDiffManager:
                 
                 # Store updated content in database
                 design_package = {
-                    "original_design": design_content,
+                    "graph": design_content,
                     "description": description,
                     "mermaid": mermaid,
                     "timestamp": timestamp

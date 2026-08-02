@@ -34,6 +34,17 @@ MAX_HISTORY_INTERACTIONS = 10
 DEFAULT_TOKEN_BUDGET = 20000
 
 
+def context_before(request: AiChatRequest) -> str | None:
+    """What the candidate was looking at when they asked.
+
+    A design round has no code, so its Mermaid goes in the same column. The column
+    is named `code_context_before`, which is now half a lie, but it is what the
+    telemetry means — the artefact the turn was about — and renaming it would take a
+    migration across rows that are already written.
+    """
+    return request.code_context if request.design_context is None else request.design_context
+
+
 async def get_or_create_session(
     candidate_interview_id: str,
     workflow_step_id: str,
@@ -112,7 +123,7 @@ async def chat(
         tokens_input=result["tokens_input"],
         tokens_output=result["tokens_output"],
         latency_ms=result["latency_ms"],
-        code_context_before=request.code_context,
+        code_context_before=context_before(request),
         cursor_position_line=request.cursor_line,
         cursor_position_col=request.cursor_col,
     )
@@ -197,7 +208,7 @@ async def chat_stream(
                 tokens_input=tokens_input,
                 tokens_output=tokens_output,
                 latency_ms=latency_ms,
-                code_context_before=request.code_context,
+                code_context_before=context_before(request),
                 cursor_position_line=request.cursor_line,
                 cursor_position_col=request.cursor_col,
             )
