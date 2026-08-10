@@ -38,11 +38,16 @@ class ContextSwitchProcessor(BaseProcessor):
         """Process frames after StartFrame validation."""
         await self.push_frame(frame, direction)
     
-    async def inject_planner_instructions(self, planner_field: PlannerField):
+    async def inject_planner_instructions(self, planner_field: PlannerField, run_llm: bool = True):
         """Inject new planner instructions into LLM context.
-        
+
         Args:
             planner_field: The planner field containing instructions to inject
+            run_llm: Whether to trigger inference after injecting. For a timer-initiated
+                transition the LLM is NOT already generating, so this MUST be True or the new
+                phase is injected but never spoken (the bot keeps discussing the old problem).
+                For an LLM-initiated transition the model is already generating, so pass False to
+                avoid a duplicate response.
         """
         try:
             # Check if interview is already completed
@@ -58,7 +63,7 @@ class ContextSwitchProcessor(BaseProcessor):
             system_message = self._create_transition_message(instructions, planner_field)
             
             # Create LLM message frame to inject context
-            context_frame = self._create_llm_context_frame(system_message)
+            context_frame = self._create_llm_context_frame(system_message, run_llm=run_llm)
             
             # Push the context frame downstream to LLM
             await self.push_frame(context_frame, FrameDirection.DOWNSTREAM)
@@ -289,26 +294,27 @@ You've used {progress_percentage:.0f}% of the allocated time for this phase. Ple
 """
         return nudge_message
     
-    def _create_llm_context_frame(self, message: str) -> LLMMessagesAppendFrame:
+    def _create_llm_context_frame(self, message: str, run_llm: bool = False) -> LLMMessagesAppendFrame:
         """Create an LLM context frame with the given message.
-        
+
         Args:
             message: The message to include in the context frame
-            
+            run_llm: Whether to trigger inference after appending. Default False (safe for nudges and
+                LLM-initiated transitions where the model is already generating). A timer-initiated
+                phase transition passes True so the bot actually SPEAKS the new phase.
+
         Returns:
-            LLMMessagesUpdateFrame for injection into the pipeline
+            LLMMessagesAppendFrame for injection into the pipeline
         """
         # Use standard dict format for LLM messages
-        self.logger.debug("Creating LLM context message with dict format")
+        self.logger.debug("Creating LLM context message with dict format", run_llm=run_llm)
         messages = [
             {
-                "role": "system", 
+                "role": "system",
                 "content": message
             }
         ]
-        # run_llm=False because during LLM-initiated transitions, the LLM is already generating
-        # Setting run_llm=True would cause duplicate responses
-        return LLMMessagesAppendFrame(messages=messages, run_llm=False)
+        return LLMMessagesAppendFrame(messages=messages, run_llm=run_llm)
     
     def _create_llm_context_frame_for_bot_interruption(self, message: str) -> InterviewClosureFrame:
         """Create InterviewClosureFrame for interview closure.
