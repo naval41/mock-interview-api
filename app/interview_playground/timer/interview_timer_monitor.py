@@ -721,6 +721,24 @@ class InterviewTimerMonitor:
     async def finalize_interview(self):
         """Finalize the interview when all planners are complete."""
         try:
+            # DETERMINISTIC CLOSURE GUARD: never finalize while non-terminal phases remain. If a
+            # later planner phase still exists beyond the current sequence, the interview is NOT
+            # over — advance to it instead of closing. This prevents premature wrap-up even if the
+            # LLM tried to end early. Terminal advancement still happens later via the timer.
+            current_sequence = self.interview_context.current_workflow_step_sequence
+            has_next = any(
+                pf.sequence > current_sequence for pf in self.interview_context.planner_fields
+            )
+            if has_next:
+                self.logger.warning(
+                    "🚧 finalize_interview called but later phases remain - refusing to finalize; "
+                    "advancing to next phase instead",
+                    current_sequence=current_sequence,
+                    total_planner_fields=len(self.interview_context.planner_fields),
+                )
+                await self.transition_to_next_planner(initiated_by="timer")
+                return
+
             self.is_running = False
             
             # Inject closure context if processor is available
