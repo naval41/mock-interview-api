@@ -378,17 +378,22 @@ class InterviewTimerMonitor:
                 
                 # Send final nudge signal to LLM (time has fully elapsed)
                 await self._send_time_nudge_signal(100.0, is_final=True)
-                
+
                 # Trigger callback if provided
                 if self.timer_callback:
                     await self.timer_callback("timer_expired", {
                         "completed_planner": current_planner
                     })
-                
-                # DO NOT transition automatically - let LLM decide via function call
-                self.logger.info("⏸️ Timer expired but not transitioning - waiting for LLM to initiate transition",
+
+                # DETERMINISTIC ADVANCE: the scheduler owns phase advancement. When the timer
+                # expires we advance unconditionally rather than waiting on the LLM to emit a
+                # transition tool call (which it frequently never does, leaving interviews stuck on
+                # an early phase). The LLM retains only the power to REQUEST an *early* exit via
+                # handle_llm_initiated_transition; guaranteed advancement lives here.
+                self.logger.info("⏭️ Timer expired - scheduler advancing phase deterministically",
                                current_sequence=self.interview_context.current_workflow_step_sequence)
-                
+                await self.transition_to_next_planner(initiated_by="timer")
+
             except Exception as e:
                 self.logger.error("Failed to handle timer expiration", error=str(e))
     
@@ -634,9 +639,14 @@ class InterviewTimerMonitor:
                                duration_minutes=next_planner.duration,
                                transition_number=self.transitions_completed)
                 
-                # Inject new instructions if context processor is available
+                # Inject new instructions if context processor is available.
+                # For a timer-initiated transition the LLM is NOT already generating, so we must
+                # trigger inference (run_llm=True) or the new phase is injected but never spoken.
+                # For an LLM-initiated transition the model is already generating → run_llm=False.
                 if self.context_processor:
-                    await self.context_processor.inject_planner_instructions(next_planner)
+                    await self.context_processor.inject_planner_instructions(
+                        next_planner, run_llm=(initiated_by == "timer")
+                    )
                 
                 # Start new timer
                 await self.start_current_planner_timer()
@@ -711,6 +721,24 @@ class InterviewTimerMonitor:
     async def finalize_interview(self):
         """Finalize the interview when all planners are complete."""
         try:
+            # DETERMINISTIC CLOSURE GUARD: never finalize while non-terminal phases remain. If a
+            # later planner phase still exists beyond the current sequence, the interview is NOT
+            # over — advance to it instead of closing. This prevents premature wrap-up even if the
+            # LLM tried to end early. Terminal advancement still happens later via the timer.
+            current_sequence = self.interview_context.current_workflow_step_sequence
+            has_next = any(
+                pf.sequence > current_sequence for pf in self.interview_context.planner_fields
+            )
+            if has_next:
+                self.logger.warning(
+                    "🚧 finalize_interview called but later phases remain - refusing to finalize; "
+                    "advancing to next phase instead",
+                    current_sequence=current_sequence,
+                    total_planner_fields=len(self.interview_context.planner_fields),
+                )
+                await self.transition_to_next_planner(initiated_by="timer")
+                return
+
             self.is_running = False
             
             # Inject closure context if processor is available

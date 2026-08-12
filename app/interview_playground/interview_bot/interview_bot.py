@@ -298,7 +298,12 @@ class InterviewBot:
                         self._handle_phase_transition_function,
                         cancel_on_interruption=False  # Don't cancel on interruption
                     )
-                    self.logger.info("🔧 Registered phase transition function with LLM service")
+                    self.llm_service.register_function(
+                        "check_remaining_phases",
+                        self._handle_check_remaining_phases_function,
+                        cancel_on_interruption=False
+                    )
+                    self.logger.info("🔧 Registered phase transition + check_remaining_phases functions with LLM service")
                 
                 if initial_instructions:
                     self.logger.info("🤖 LLM service setup completed with initial planner instructions", 
@@ -635,8 +640,28 @@ Please begin the interview following these specific instructions for this phase.
         function_schema = self._create_phase_transition_function_schema()
         if not function_schema:
             return None
-        
-        return ToolsSchema(standard_tools=[function_schema])
+
+        tools = [function_schema]
+        check_schema = self._create_check_remaining_phases_function_schema()
+        if check_schema:
+            tools.append(check_schema)
+        return ToolsSchema(standard_tools=tools)
+
+    def _create_check_remaining_phases_function_schema(self) -> Optional[FunctionSchema]:
+        """Schema for the read-only check_remaining_phases tool."""
+        if not self.interview_context:
+            return None
+        return FunctionSchema(
+            name="check_remaining_phases",
+            description=(
+                "Check how many interview phases remain before the interview should end. You MUST "
+                "call this BEFORE saying any closing/wrap-up/goodbye words. If phases remain, do not "
+                "wrap up — continue the current phase or call transition_to_next_phase. Only wrap up "
+                "when this reports is_final_phase=true."
+            ),
+            properties={},
+            required=[],
+        )
     
     def _get_function_calling_guidance(self) -> str:
         """Get guidance text about phase transition function calling.
@@ -666,6 +691,17 @@ You have access to a function called `transition_to_next_phase` that allows you 
 
 **IMPORTANT — the system enforces a minimum time on each phase.**
 For coding/design phases, inferred transitions ('natural_breakpoint', 'objectives_complete', 'other') are REJECTED until roughly half the phase duration has elapsed. If your transition is rejected, simply continue the current problem — do NOT repeatedly retry, and do NOT tell the candidate you are transitioning. Only 'candidate_ready' (an explicit candidate request) bypasses this minimum.
+
+--- CLOSING THE INTERVIEW (MANDATORY CHECK) ---
+
+Before you say ANY closing, wrap-up, or goodbye words (e.g. "that's all the time we have", "thanks
+for your time today", "this concludes our interview"), you MUST FIRST call `check_remaining_phases`.
+- If it reports `is_final_phase=false` (phases remain): DO NOT wrap up or say goodbye. Continue the
+  current phase, or call `transition_to_next_phase` to move forward. There is still more interview.
+- Only when `check_remaining_phases` reports `is_final_phase=true` may you wrap up and close.
+Never end the interview based on your own sense that it "feels done" — always verify with the tool.
+
+--- END CLOSING CHECK ---
 
 **How to use:**
 Simply call `transition_to_next_phase()` when you're ready to move to the next phase.
@@ -748,6 +784,51 @@ The system will automatically use the current interview context to perform the t
                 "message": f"Internal error: {str(e)}"
             })
     
+    async def _handle_check_remaining_phases_function(self, params):
+        """Handle the check_remaining_phases tool call from the LLM.
+
+        Read-only: tells the interviewer how many phases remain so it does NOT wrap up / say goodbye
+        while coding or other phases are still pending. The interviewer MUST call this before any
+        closing language (enforced by prompt guidance + the deterministic finalize guard).
+        """
+        try:
+            if not self.interview_context:
+                await params.result_callback({"status": "error", "message": "Interview context not available"})
+                return
+
+            fields = self.interview_context.planner_fields or []
+            current = self.interview_context.current_workflow_step_sequence
+            max_seq = max((pf.sequence for pf in fields), default=current)
+            remaining = [pf for pf in fields if pf.sequence > current]
+            next_phase = min(remaining, key=lambda pf: pf.sequence) if remaining else None
+
+            def _phase_type(pf):
+                try:
+                    return self._infer_workflow_step_type_from_tools(pf.tool_name, pf.tool_properties).value
+                except Exception:  # noqa: BLE001
+                    return "UNKNOWN"
+
+            result = {
+                "status": "ok",
+                "current_phase_sequence": current,
+                "remaining_phase_count": len(remaining),
+                "is_final_phase": len(remaining) == 0,
+                "next_phase_type": _phase_type(next_phase) if next_phase else None,
+                "guidance": (
+                    "There are more phases remaining. You MUST NOT wrap up, thank the candidate for "
+                    "their time, or say goodbye yet. Continue the current phase or call "
+                    "transition_to_next_phase to advance."
+                    if remaining else
+                    "This is the final phase. It is appropriate to wrap up and close the interview now."
+                ),
+            }
+            self.logger.info("🔎 check_remaining_phases called",
+                             current=current, remaining=len(remaining), is_final=result["is_final_phase"])
+            await params.result_callback(result)
+        except Exception as e:  # noqa: BLE001
+            self.logger.error("❌ Error in check_remaining_phases", error=str(e), exc_info=True)
+            await params.result_callback({"status": "error", "message": f"Internal error: {str(e)}"})
+
     async def _execute_completion_workflow(self):
         """Execute interview completion workflow (idempotent).
         
