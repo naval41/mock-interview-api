@@ -193,3 +193,12 @@ Thumbs.db
 # Logs
 *.log
 logs/
+# --- Environment files: never commit real values ---
+# .env*  also catches copies with spaces, e.g. ".env copy"
+# *.env  catches config-style names, e.g. "config.prod.env", "local.env"
+.env*
+*.env
+!.env*.template
+!.env*.example
+!*.env.template
+!*.env.example
